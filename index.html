@@ -1,49 +1,220 @@
-<!doctype html>
+
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#12382c"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Footy Picks AI</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#123c2a">
+<title>Footy Picks</title>
 <style>
-:root{--site-primary:#12382C;--site-secondary:#DDEBE3;--site-background:#F4F7F4;--site-on-primary:#FFFFFF;--site-on-secondary:#16382B;--site-on-background:#17231C;--site-font-body:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--site-font-heading:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--site-heading-scale:1;--site-spacing-scale:1;--site-radius-scale:1;--site-decoration-opacity:1}
-*{box-sizing:border-box}body{margin:0;background:light-dark(#f4f7f4,#101612);color:light-dark(#17231c,#edf4ee);font-family:var(--site-font-body)}button,input,select{font:inherit}button{cursor:pointer}.app{min-height:100vh;background:light-dark(var(--site-background),#101612);color:light-dark(var(--site-on-background),#edf4ee)}.hero{background:var(--site-primary);color:white;padding:calc(24px * var(--site-spacing-scale));padding-top:max(calc(22px * var(--site-spacing-scale)),env(safe-area-inset-top));}.wrap{max-width:850px;margin:auto}.brand{display:flex;gap:13px;align-items:center}.logo{height:48px;width:48px;border-radius:15px;background:#285742;display:grid;place-items:center;font-size:25px}.brand h1{font-size:calc(25px * var(--site-heading-scale));margin:0;letter-spacing:-.7px}.muted{color:light-dark(#65746a,#a9b9ad)}.hero .muted{color:#c4d8cb;font-size:13px;margin-top:4px}.pill{font-size:11px;font-weight:800;letter-spacing:.4px;background:#d6f3df;color:#17452c;border-radius:99px;padding:6px 9px;white-space:nowrap}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:22px}.stat{background:#204b39;border-radius:13px;padding:12px}.stat span{font-size:12px;color:#c4d8cb;display:block}.stat strong{font-size:22px;display:block;margin-top:4px}.main{max-width:850px;margin:auto;padding:18px 16px 40px}.nav{display:flex;gap:7px;margin-bottom:20px;position:sticky;top:0;padding:5px 0;background:light-dark(var(--site-background),#101612);z-index:3}.nav button,.btn{border:1px solid light-dark(#d4ded7,#34443a);border-radius:11px;padding:11px 13px;background:transparent;color:inherit;font-weight:650}.nav button{flex:1}.nav button.active,.btn.primary{background:var(--site-primary);color:white;border-color:var(--site-primary)}h2{font-size:21px;letter-spacing:-.4px;margin:0 0 5px}.intro{font-size:13px;line-height:1.5;margin:0 0 16px}.filters{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}.field label{display:block;font-size:12px;font-weight:700;margin-bottom:6px}.field select,.field input{width:100%;padding:11px;border:1px solid light-dark(#d4ded7,#34443a);border-radius:10px;background:light-dark(#fff,#1a241d);color:inherit}.notice{padding:12px 13px;background:light-dark(#fff6df,#342c17);border:1px solid light-dark(#f0dfad,#5e4b20);border-radius:12px;font-size:12px;line-height:1.5;margin:12px 0 16px}.match{border:1px solid light-dark(#dce5de,#303e34);border-radius:15px;padding:15px;margin-bottom:11px;background:light-dark(#fff,#171f19)}.matchtop{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.league{font-size:11px;color:light-dark(#68776d,#a9b9ad);font-weight:700;margin-bottom:5px}.teams{font-size:17px;font-weight:750;letter-spacing:-.25px}.matchdate{font-size:12px;color:light-dark(#68776d,#a9b9ad);margin-top:5px}.marketlabel{font-size:12px;font-weight:800;margin:17px 0 8px}.odds{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.odd{border:1px solid light-dark(#d7e1da,#34443a);border-radius:11px;padding:10px 4px;text-align:center;background:light-dark(#f8faf8,#1b251e);color:inherit}.odd span{display:block;font-size:12px;color:light-dark(#65746a,#b4c3b7)}.odd strong{display:block;margin-top:5px;font-size:17px}.odd small{display:block;font-size:10px;margin-top:4px;color:light-dark(#65746a,#b4c3b7)}.odd.selected{border:2px solid #287849;background:light-dark(#e6f5ea,#193c27);padding:9px 3px}.best{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:12px;padding:10px;border-radius:10px;background:light-dark(#edf6ef,#1b3022);font-size:12px}.tag{font-size:11px;font-weight:750;background:light-dark(#dcebe0,#294936);color:light-dark(#20452e,#d7f2df);padding:5px 7px;border-radius:7px}.reason{font-size:12px;line-height:1.55;margin:11px 0;color:light-dark(#57675d,#b5c4b8)}.actions{display:flex;gap:8px}.actions button{flex:1;font-size:12px;padding:10px 6px}.section{margin-bottom:20px}.empty{padding:25px 15px;text-align:center;border:1px dashed light-dark(#cad7ce,#3a493e);border-radius:14px;color:light-dark(#637268,#b4c2b6);font-size:13px;line-height:1.5}.row{display:flex;align-items:center;justify-content:space-between;gap:10px}.small{font-size:12px}.tracking{border:1px solid light-dark(#dce5de,#303e34);border-radius:13px;padding:13px;margin:10px 0;background:light-dark(#fff,#171f19)}.tracking h3{font-size:15px;margin:0 0 4px}.tracking .actions{margin-top:12px}.tracking .actions button{flex:none}.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}.kpi{border-radius:13px;background:light-dark(#e8f0ea,#1a251d);padding:14px}.kpi span{font-size:12px;color:light-dark(#65746a,#b4c2b6)}.kpi strong{display:block;font-size:23px;margin-top:6px}.footer{font-size:11px;line-height:1.55;color:light-dark(#69766c,#a9b7ac);padding:18px 0 4px}.hidden{display:none!important}@media(min-width:650px){.main{padding:24px 22px 50px}.hero{padding:28px}.match{padding:18px}.teams{font-size:19px}}
+*{box-sizing:border-box}body{margin:0;background:#f2f6f2;color:#17251d;font:16px -apple-system,BlinkMacSystemFont,sans-serif}
+header{background:#123c2a;color:white;padding:23px 18px;border-radius:0 0 20px 20px}
+h1{margin:0 0 5px}header p{margin:0;color:#d5e6da;font-size:14px}
+main{max-width:700px;margin:auto;padding:14px}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+button,select,input{font:inherit;border-radius:10px;padding:11px;border:1px solid #d0ddd2}
+button{background:#176b45;color:white;border:0;font-weight:650;cursor:pointer}
+nav button{flex:1;background:#e0e9e1;color:#23432f;font-size:13px}
+nav button.active{background:#176b45;color:white}
+.card{background:white;border:1px solid #e0e8e1;border-radius:15px;padding:15px;margin:10px 0}
+small,.muted{color:#657368;font-size:12px}
+label{display:block;margin:12px 0 5px;font-size:13px}
+input,select{width:100%;background:white}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{flex:1;min-width:0}
+.teams{display:flex;justify-content:space-between;gap:8px;font-weight:700}
+.teams span{flex:1}.teams span:last-child{text-align:right}
+.probs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:13px 0}
+.prob{text-align:center;background:#f2f7f2;border-radius:10px;padding:10px 3px}
+.prob b{display:block;font-size:19px}.prob small{font-size:11px}
+hr{border:0;border-top:1px solid #e5ebe5;margin:12px 0}
+[hidden]{display:none!important}
+.status{background:#fff5d9;border-radius:10px;padding:11px;font-size:13px;line-height:1.4}
 </style>
 </head>
-<body><div class="app">
-<header class="hero"><div class="wrap"><div class="brand"><div class="logo">⚽</div><div style="flex:1"><h1>Footy Picks AI</h1><div class="muted">English football · Result-first predictions</div></div><span class="pill">FREE V1</span></div><div class="stats"><div class="stat"><span>Leagues</span><strong>4</strong></div><div class="stat"><span>Tracked picks</span><strong id="trackedCount">0</strong></div><div class="stat"><span>Live feed</span><strong id="feedState" style="font-size:15px">Not connected</strong></div></div></div></header>
-<main class="main"><nav class="nav" aria-label="Main navigation"><button class="active" data-tab="picks">Today's picks</button><button data-tab="accas">Accumulator</button><button data-tab="tracker">Results tracker</button></nav>
-<section id="picks"><h2>Today's shortlist</h2><p class="intro muted">Result (1X2) is the main market. Select a match outcome to track it. Live fixture/odds feeds are not connected in this initial demo.</p>
-<div class="filters"><div class="field"><label for="league">Competition</label><select id="league"><option>All leagues</option><option>Premier League</option><option>Championship</option><option>League One</option><option>League Two</option></select></div><div class="field"><label for="market">Market</label><select id="market"><option>Result (1X2)</option><option>All markets</option><option>Over 1.5 goals</option><option>Both teams to score</option><option>Under 3.5 goals</option></select></div></div>
-<div class="notice"><strong>Demo data, not betting advice.</strong> The fixtures, prices and probabilities below are fictional examples to demonstrate the interface. They must not be used to place bets. A live version must load and timestamp verified source data first.</div>
-<div id="matchList"></div>
+<body>
+<header>
+<h1>⚽ Footy Picks</h1>
+<p>Fixtures · 1X2 probabilities · Accumulators · Results tracker</p>
+</header>
+<main>
+<nav>
+<button class="active" data-tab="matches">Fixtures</button>
+<button data-tab="acc">Accumulator</button>
+<button data-tab="history">Tracker</button>
+<button data-tab="setup">Data setup</button>
+</nav>
+
+<section id="matches">
+<div class="row"><h2>Upcoming matches</h2><button id="refresh">Refresh</button></div>
+<p id="status" class="status">Add your API token under Data setup to load real fixtures.</p>
+<div id="games"></div>
 </section>
-<section id="accas" class="hidden"><h2>Accumulator builder</h2><p class="intro muted">Combine your selected outcomes. Accumulator calculations are illustrative until live odds are connected.</p><div id="accaList"></div><div id="accaSummary" class="notice hidden"></div><button class="btn primary" id="saveAcca">Track this accumulator</button></section>
-<section id="tracker" class="hidden"><h2>Results tracker</h2><p class="intro muted">Record results to measure hit rate and profit/loss. Stored on this device/browser.</p><div class="field" style="margin-bottom:14px"><label for="stake">Default stake per bet (£)</label><input id="stake" type="number" min="0" step=".50" value="5"></div><div class="kpis"><div class="kpi"><span>Settled bets</span><strong id="settledCount">0</strong></div><div class="kpi"><span>Recorded profit / loss</span><strong id="profit">£0.00</strong></div><div class="kpi"><span>Hit rate</span><strong id="hitRate">—</strong></div><div class="kpi"><span>Tracked picks</span><strong id="totalCount">0</strong></div></div><div id="trackedList" style="margin-top:16px"></div><button class="btn" id="clearData" style="margin-top:10px">Clear all tracking data</button></section>
-<div class="footer">Footy Picks AI is a prototype, not a bookmaker and does not place bets. No prediction guarantees a result. Never gamble more than you can afford to lose. If betting stops being fun, seek support from GambleAware or the National Gambling Helpline.</div>
-</main></div>
+
+<section id="acc" hidden>
+<h2>Accumulator</h2>
+<div class="card">
+<div id="selections">No picks selected yet.</div>
+<hr>
+<b>Estimated combined probability: <span id="combined">—</span></b>
+<p><button id="save">Save accumulator</button></p>
+</div>
+</section>
+
+<section id="history" hidden>
+<h2>Prediction tracker</h2>
+<div class="card">
+<div id="historylist">No saved picks yet.</div>
+<button id="clear">Clear tracker</button>
+</div>
+</section>
+
+<section id="setup" hidden>
+<h2>Data setup</h2>
+<div class="card">
+<p class="muted">Your token is saved in this browser on this device. Never put it directly into this public HTML file or share it.</p>
+<label for="token">football-data.org API token</label>
+<input id="token" type="password" autocomplete="off" placeholder="Paste your token here">
+<label for="league">Competition</label>
+<select id="league">
+<option value="PL">Premier League</option>
+<option value="ELC">Championship</option>
+<option value="CL">Champions League</option>
+<option value="PD">Spanish La Liga</option>
+<option value="BL1">German Bundesliga</option>
+<option value="SA">Italian Serie A</option>
+<option value="FL1">French Ligue 1</option>
+</select>
+<p><button id="connect">Save token & load fixtures</button></p>
+<p class="muted">Only competitions included in your API plan will load. If the request fails, the service may be blocking browser requests or your plan may not include that competition.</p>
+</div>
+</section>
+<p class="muted">Probabilities are rough estimates based on current league standings, not bookmaker odds or a trained model. No guarantee of results. Tracker data stays in this browser.</p>
+</main>
 <script>
-const demoMatches=[
-{id:"m1",league:"Premier League",home:"Example FC",away:"United Town",date:"Demo fixture",p:[48,29,23],odds:[2.00,3.40,4.00],reason:"Illustrative model output only. Live form and odds are not connected."},
-{id:"m2",league:"Championship",home:"Riverside FC",away:"County Athletic",date:"Demo fixture",p:[41,30,29],odds:[2.30,3.10,3.00],reason:"Illustrative model output only. Live form and odds are not connected."},
-{id:"m3",league:"League One",home:"Northbridge",away:"Harbour FC",date:"Demo fixture",p:[44,28,28],odds:[2.10,3.30,3.20],reason:"Illustrative model output only. Live form and odds are not connected."},
-{id:"m4",league:"League Two",home:"Market Vale",away:"Forest Borough",date:"Demo fixture",p:[35,32,33],odds:[2.65,3.00,2.80],reason:"Illustrative model output only. Live form and odds are not connected."}
-];
-const labels=["Home win","Draw","Away win"],symbols=["1","X","2"];
-let tracked=[],acca=[];
-try{tracked=JSON.parse(localStorage.getItem("footyTracked")||"[]");acca=JSON.parse(localStorage.getItem("footyAcca")||"[]")}catch(e){}
-function persist(){try{localStorage.setItem("footyTracked",JSON.stringify(tracked));localStorage.setItem("footyAcca",JSON.stringify(acca))}catch(e){}}
-function money(n){return new Intl.NumberFormat("en-GB",{style:"currency",currency:"GBP"}).format(n)}
-function bestIndex(m){return m.p.indexOf(Math.max(...m.p))}
-function matchCard(m){const best=bestIndex(m);const trackedAlready=tracked.some(t=>t.id===m.id);return `<article class="match"><div class="matchtop"><div><div class="league">${m.league}</div><div class="teams">${m.home} <span class="muted" style="font-size:12px">vs</span> ${m.away}</div><div class="matchdate">${m.date}</div></div><span class="tag">Result 1X2</span></div><div class="marketlabel">Choose an outcome · estimated probability</div><div class="odds">${m.p.map((p,i)=>`<button class="odd ${i===best?"selected":""}" data-select="${m.id}" data-outcome="${i}"><span>${symbols[i]} · ${labels[i]}</span><strong>${p}%</strong><small>Example odds ${m.odds[i].toFixed(2)}</small></button>`).join("")}</div><div class="best"><span>Most likely: <strong>${labels[best]}</strong> (${m.p[best]}%)</span><span class="tag">Demo only</span></div><p class="reason">${m.reason} Real value assessment requires verified live odds and a validated model.</p><div class="actions"><button class="btn primary" data-track="${m.id}" ${trackedAlready?"disabled":""}>${trackedAlready?"Already tracked":"Track best result"}</button><button class="btn" data-acca="${m.id}">Add to acca</button></div></article>`}
-function renderMatches(){const league=document.querySelector("#league").value,market=document.querySelector("#market").value;let ms=demoMatches.filter(m=>(league==="All leagues"||m.league===league));if(market!=="Result (1X2)"&&market!=="All markets"){document.querySelector("#matchList").innerHTML='<div class="empty">Other markets will be added after the Result prediction engine and live data are connected.</div>';return}document.querySelector("#matchList").innerHTML=ms.length?ms.map(matchCard).join(""):'<div class="empty">No demo matches in this filter.</div>'}
-function addTracked(m,idx,type="Single"){if(tracked.some(t=>t.id===m.id&&t.type===type))return;const stake=Math.max(0,Number(document.querySelector("#stake").value)||5);tracked.unshift({id:m.id+"-"+type+"-"+Date.now(),matchId:m.id,league:m.league,home:m.home,away:m.away,pick:labels[idx],prob:m.p[idx],odds:m.odds[idx],stake,status:"Pending",type,source:"Demo data",created:new Date().toISOString()});persist();renderAll()}
-function renderAcca(){const el=document.querySelector("#accaList");el.innerHTML=acca.length?acca.map(a=>`<div class="tracking"><div class="row"><div><h3>${a.home} vs ${a.away}</h3><div class="small muted">${a.league} · ${a.pick} · ${a.prob}% demo probability</div></div><button class="btn" data-remove-acca="${a.id}">Remove</button></div></div>`).join(""):'<div class="empty">No selections yet. Add a selection from Today&#39;s picks.</div>';const sum=document.querySelector("#accaSummary");if(acca.length){sum.classList.remove("hidden");const odds=acca.reduce((v,a)=>v*a.odds,1);const prob=acca.reduce((v,a)=>v*a.prob/100,1)*100;sum.innerHTML=`<strong>Illustrative combined odds:</strong> ${odds.toFixed(2)}<br><strong>Naive combined probability:</strong> ${prob.toFixed(1)}%<br>Assumes independence and fictional odds; not a reliable live estimate.`}else sum.classList.add("hidden");document.querySelector("#saveAcca").disabled=!acca.length}
-function renderTracker(){const settled=tracked.filter(t=>t.status!=="Pending"),won=settled.filter(t=>t.status==="Won").length;const pl=settled.reduce((s,t)=>s+(t.status==="Won"?t.stake*(t.odds-1):t.status==="Lost"?-t.stake:0),0);document.querySelector("#settledCount").textContent=settled.length;document.querySelector("#profit").textContent=money(pl);document.querySelector("#profit").style.color=pl>=0?"#23804b":"#c34545";document.querySelector("#hitRate").textContent=settled.length?Math.round(won/settled.length*100)+"%":"—";document.querySelector("#totalCount").textContent=tracked.length;document.querySelector("#trackedCount").textContent=tracked.length;const el=document.querySelector("#trackedList");el.innerHTML=tracked.length?tracked.map(t=>`<div class="tracking"><div class="row"><div><h3>${t.home} vs ${t.away}</h3><div class="small muted">${t.league||"Accumulator"} · ${t.type} · ${t.pick||"Combined selections"}</div><div class="small" style="margin-top:5px">Stake ${money(t.stake)} · demo odds ${Number(t.odds).toFixed(2)}</div></div><span class="tag">${t.status}</span></div>${t.status==="Pending"?`<div class="actions"><button class="btn primary" data-settle="${t.id}" data-status="Won">Won</button><button class="btn" data-settle="${t.id}" data-status="Lost">Lost</button><button class="btn" data-settle="${t.id}" data-status="Void">Void</button></div>`:""}<button class="btn" style="margin-top:8px" data-delete="${t.id}">Delete entry</button></div>`).join(""):'<div class="empty">No tracked picks yet. Add a selection from Today&#39;s picks.</div>'}
-function renderAll(){renderMatches();renderAcca();renderTracker();persist()}
-document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("active",x===b));["picks","accas","tracker"].forEach(id=>document.getElementById(id).classList.toggle("hidden",id!==b.dataset.tab))}));
-document.querySelector("#league").addEventListener("change",renderMatches);document.querySelector("#market").addEventListener("change",renderMatches);document.querySelector("#stake").addEventListener("change",()=>{});
-document.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.track){const m=demoMatches.find(x=>x.id===b.dataset.track);addTracked(m,bestIndex(m));document.querySelector('[data-tab="tracker"]').click()}if(b.dataset.select){const m=demoMatches.find(x=>x.id===b.dataset.select);const idx=Number(b.dataset.outcome);addTracked(m,idx);document.querySelector('[data-tab="tracker"]').click()}if(b.dataset.acca){const m=demoMatches.find(x=>x.id===b.dataset.acca);const idx=bestIndex(m);if(!acca.some(x=>x.id===m.id))acca.push({...m,pick:labels[idx],id:m.id,prob:m.p[idx],odds:m.odds[idx]});renderAcca();document.querySelector('[data-tab="accas"]').click()}if(b.dataset.removeAcca){acca=acca.filter(a=>a.id!==b.dataset.removeAcca);renderAll()}if(b.dataset.settle){tracked=tracked.map(t=>t.id===b.dataset.settle?{...t,status:b.dataset.status}:t);renderAll()}if(b.dataset.delete){tracked=tracked.filter(t=>t.id!==b.dataset.delete);renderAll()}});
-document.querySelector("#saveAcca").addEventListener("click",()=>{if(!acca.length)return;const stake=Math.max(0,Number(document.querySelector("#stake").value)||5),odds=acca.reduce((v,a)=>v*a.odds,1),prob=acca.reduce((v,a)=>v*a.prob/100,1)*100;tracked.unshift({id:"acca-"+Date.now(),league:"Multiple leagues",home:"Accumulator",away:acca.length+" selections",pick:acca.map(a=>a.pick).join(" + "),prob,odds,stake,status:"Pending",type:"Accumulator",created:new Date().toISOString()});acca=[];renderAll();document.querySelector('[data-tab="tracker"]').click()});
-document.querySelector("#clearData").addEventListener("click",()=>{if(confirm("Clear all tracked picks and accumulator selections?")){tracked=[];acca=[];renderAll()}});
-renderAll();
-</script></body></html>
+const $=id=>document.getElementById(id);
+let games=[], picks=JSON.parse(localStorage.getItem("fp_picks")||"[]");
+let history=JSON.parse(localStorage.getItem("fp_history")||"[]");
+
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+ document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("active",x===b));
+ ["matches","acc","history","setup"].forEach(id=>$(id).hidden=id!==b.dataset.tab);
+});
+
+$("token").value=localStorage.getItem("fp_token")||"";
+$("league").value=localStorage.getItem("fp_league")||"PL";
+$("connect").onclick=async()=>{
+ const t=$("token").value.trim();
+ if(!t){alert("Paste your API token first.");return}
+ localStorage.setItem("fp_token",t);
+ localStorage.setItem("fp_league",$("league").value);
+ await loadFixtures();
+};
+$("refresh").onclick=loadFixtures;
+
+async function api(path){
+ const token=localStorage.getItem("fp_token");
+ const res=await fetch("https://api.football-data.org/v4/"+path,{
+  headers:{"X-Auth-Token":token}
+ });
+ if(!res.ok)throw Error(res.status+" "+res.statusText);
+ return res.json();
+}
+async function loadFixtures(){
+ const token=localStorage.getItem("fp_token")||$("token").value.trim();
+ if(!token){$("status").textContent="Open Data setup and enter your API token.";return}
+ $("status").textContent="Loading fixtures and league table…";
+ try{
+  const league=$("league").value;
+  const now=new Date(), end=new Date(now);end.setDate(end.getDate()+14);
+  const fmt=d=>d.toISOString().slice(0,10);
+  const [m,s]=await Promise.all([
+   api("competitions/"+league+"/matches?dateFrom="+fmt(now)+"&dateTo="+fmt(end)),
+   api("competitions/"+league+"/standings")
+  ]);
+  const table=s.standings?.find(x=>x.type==="TOTAL")?.table||[];
+  const rank={};
+  table.forEach(t=>rank[t.team.id]={
+   pts:t.points||0,played:t.playedGames||1,
+   gd:t.goalDifference||0
+  });
+  games=(m.matches||[]).filter(x=>["SCHEDULED","TIMED"].includes(x.status))
+   .map(x=>({...x,p:probability(rank[x.homeTeam.id],rank[x.awayTeam.id])}));
+  renderGames();
+  $("status").textContent=games.length?
+   "Loaded "+games.length+" real fixtures. Probabilities are basic estimates.":
+   "No upcoming fixtures found in this date range for this competition.";
+ }catch(e){
+  $("status").textContent="Could not load data: "+e.message+
+   ". Check your token, competition access and connection. If the browser blocks the API request, a secure proxy will be needed.";
+ }
+}
+function probability(h,a){
+ if(!h||!a)return [45,27,28];
+ const hs=h.pts/h.played, as=a.pts/a.played;
+ const diff=Math.max(-1.5,Math.min(1.5,(hs-as)/3+(h.gd/h.played-a.gd/a.played)/12));
+ let home=0.44+diff*0.20, draw=0.27-Math.abs(diff)*0.035;
+ draw=Math.max(.18,Math.min(.31,draw));
+ let away=1-home-draw;
+ home=Math.max(.12,Math.min(.75,home));
+ away=1-draw-home;
+ const arr=[home,draw,away].map(x=>Math.max(.08,x));
+ const sum=arr.reduce((x,y)=>x+y,0);
+ return arr.map(x=>Math.round(x/sum*100));
+}
+function renderGames(){
+ const root=$("games");
+ if(!games.length){root.innerHTML='<p class="muted">No fixtures loaded yet. Connect your data under Data setup.</p>';return}
+ root.innerHTML="";
+ games.forEach(g=>{
+  const d=document.createElement("div");d.className="card";
+  d.innerHTML=`<small>${g.competition?.name||g.area?.name||"Football"} · ${new Date(g.utcDate).toLocaleString()}</small>
+  <div class="teams" style="margin-top:10px"><span>${g.homeTeam.name}</span><span style="flex:0;color:#657368">vs</span><span>${g.awayTeam.name}</span></div>
+  <div class="probs">${g.p.map((p,i)=>`<div class="prob"><b>${p}%</b><small>${["Home","Draw","Away"][i]}</small></div>`).join("")}</div>
+  <div class="row"><select id="p${g.id}"><option value="">Choose pick…</option><option value="0">Home win</option><option value="1">Draw</option><option value="2">Away win</option></select><button data-pick="${g.id}">Add pick</button></div>`;
+  root.appendChild(d);
+ });
+ root.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{
+  const g=games.find(x=>x.id===Number(b.dataset.pick)),v=$("p"+g.id).value;
+  if(v===""){alert("Choose an outcome.");return}
+  if(picks.some(x=>x.id===g.id)){alert("That match is already selected.");return}
+  picks.push({id:g.id,match:g.homeTeam.name+" vs "+g.awayTeam.name,
+   outcome:["Home","Draw","Away"][Number(v)],prob:g.p[Number(v)]});
+  saveState();renderPicks();alert("Pick added.");
+ });
+}
+function saveState(){
+ localStorage.setItem("fp_picks",JSON.stringify(picks));
+ localStorage.setItem("fp_history",JSON.stringify(history));
+}
+function renderPicks(){
+ $("selections").innerHTML=picks.length?picks.map((p,i)=>
+ `<p>${p.match}<br><small>${p.outcome} · ${p.prob}%</small> <button data-rm="${i}">Remove</button></p>`
+ ).join(""):"No picks selected yet.";
+ const probability=picks.reduce((a,p)=>a*p.prob/100,1);
+ $("combined").textContent=picks.length?(probability*100).toFixed(2)+"%":"—";
+ $("selections").querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{
+  picks.splice(Number(b.dataset.rm),1);saveState();renderPicks();
+ });
+}
+$("save").onclick=()=>{
+ if(!picks.length){alert("Add at least one pick.");return}
+ history.unshift({date:new Date().toLocaleString(),title:"Accumulator",
+  detail:picks.map(p=>p.outcome+" — "+p.match).join("; ")});
+ picks=[];saveState();renderPicks();renderHistory();alert("Saved on this device.");
+};
+function renderHistory(){
+ $("historylist").innerHTML=history.length?history.map((h,i)=>
+ `<p><b>${h.title}</b><br><small>${h.date}</small><br>${h.detail||""}
+ <button data-del="${i}">Delete</button></p><hr>`
+ ).join(""):"No saved picks yet.";
+ $("historylist").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{
+  history.splice(Number(b.dataset.del),1);saveState();renderHistory();
+ });
+}
+$("clear").onclick=()=>{if(confirm("Clear all saved tracker entries?")){history=[];saveState();renderHistory()}};
+renderPicks();renderHistory();
+</script>
+</body>
+</html>
+
