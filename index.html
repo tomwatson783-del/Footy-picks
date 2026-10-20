@@ -8,21 +8,90 @@
 <title>Footy Picks</title>
 <style>
 :root{color-scheme:dark;--bg:#101827;--panel:#1a2638;--panel2:#223147;--text:#f5f7fb;--muted:#a9b7ca;--green:#54d69b;--blue:#80b7ff;--red:#ff8989;--border:#34445a}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;line-height:1.45}
-header{padding:18px 16px 13px;background:#131f30;position:sticky;top:0;z-index:5;border-bottom:1px solid var(--border)}h1{font-size:26px;margin:0;font-weight:850;letter-spacing:-.7px}header p{color:var(--muted);margin:3px 0 0;font-size:12px}
-main{max-width:820px;margin:auto;padding:13px 12px 95px}nav{display:flex;gap:6px;overflow-x:auto;margin:0 0 15px;padding-bottom:3px}nav button{flex:0 0 auto;border:1px solid var(--border);background:var(--panel);color:var(--muted);padding:10px 12px;border-radius:12px;font-weight:700}nav button.active{background:var(--green);color:#10251d;border-color:var(--green)}
-button,select,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.65;cursor:default}.panel,.match,.pick,.testcard{background:var(--panel);border:1px solid var(--border);border-radius:15px;padding:14px;margin-bottom:11px}.row{display:flex;align-items:center;gap:9px}.between{justify-content:space-between}.wrap{flex-wrap:wrap}.grow{flex:1;min-width:0}
-label{display:block;font-size:12px;color:var(--muted);margin:0 0 5px}select,input{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:11px;width:100%;min-width:0}.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-.btn{background:var(--green);border:0;color:#10251d;padding:11px 14px;border-radius:10px;font-weight:800}.btn.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--border)}.btn.danger{background:#4b2732;color:#ffb4bd}.btn.small{padding:7px 10px;font-size:12px}.btn.added{background:#214b3d;color:#8cf0bf;border:1px solid #347c60}
-.muted{color:var(--muted)}.smalltext{font-size:12px}h2{font-size:20px;margin:17px 0 10px}h3{font-size:16px;margin:0 0 8px}.teamline{font-size:16px;font-weight:800}.league,.meta{font-size:12px;color:var(--muted)}
-.tag{font-size:11px;font-weight:800;background:var(--panel2);border-radius:7px;padding:5px 8px;white-space:nowrap}.tag.good{color:var(--green)}.tag.warn{color:#ffd58a}.tag.bad{color:var(--red)}
-.probrow{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}.prob{background:var(--panel2);padding:9px 5px;border-radius:10px;text-align:center}.prob strong{display:block;font-size:19px}.prob span{font-size:11px;color:var(--muted)}.progress{height:6px;background:#34445a;border-radius:8px;overflow:hidden;margin-top:5px}.progress span{display:block;height:100%;background:var(--green)}
-details{margin-top:10px;border-top:1px solid var(--border);padding-top:9px}summary{cursor:pointer;color:var(--blue);font-weight:700}.explain{color:var(--muted);font-size:13px}.explain ul{padding-left:19px}.explain li{margin:5px 0}
-.formchips{display:flex;gap:5px;margin:7px 0}.chip{width:25px;height:25px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:900;background:#34445a}.chip.W{background:#1e684a}.chip.D{background:#80601f}.chip.L{background:#783745}
-.empty{text-align:center;padding:28px 16px;color:var(--muted)}.statgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.stat{background:var(--panel2);border-radius:10px;padding:11px}.stat strong{font-size:22px;display:block}.tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:9px 6px;border-bottom:1px solid var(--border)}th{color:var(--muted)}
-.notice{background:#263349;border-left:3px solid var(--blue);padding:11px 12px;border-radius:7px;font-size:13px;margin:10px 0;color:#dce8f8}.error{color:var(--red)}footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
-#busy{position:fixed;inset:0;z-index:20;background:rgba(7,14,25,.97);display:none;align-items:center;justify-content:center;padding:22px}#busy.show{display:flex}.busybox{width:100%;max-width:420px;text-align:center}.spinner{width:66px;height:66px;border:5px solid #34445a;border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px}@keyframes spin{to{transform:rotate(360deg)}}.busytitle{font-size:23px;font-weight:850}.busybar{height:9px;border-radius:8px;background:#34445a;overflow:hidden;margin:17px 0}.busybar span{display:block;height:100%;width:4%;background:var(--green);transition:width .25s}.busysteps{text-align:left;background:var(--panel);padding:15px;border-radius:13px;margin-top:20px}.busysteps div{padding:7px 0;color:var(--muted)}.busysteps .current{color:var(--green);font-weight:800}.busysteps .done{color:var(--text)}
-@media(min-width:600px){main{padding-top:20px}.match{padding:17px}.controls{grid-template-columns:2fr 1fr 1fr}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;line-height:1.45}
+header{padding:18px 16px 13px;background:#131f30;position:sticky;top:0;z-index:5;border-bottom:1px solid var(--border)}
+h1{font-size:26px;margin:0;font-weight:850;letter-spacing:-.7px}
+header p{color:var(--muted);margin:3px 0 0;font-size:12px}
+main{max-width:820px;margin:auto;padding:13px 12px 95px}
+nav{display:flex;gap:6px;overflow-x:auto;margin:0 0 15px;padding-bottom:3px}
+nav button{flex:0 0 auto;border:1px solid var(--border);background:var(--panel);color:var(--muted);padding:10px 12px;border-radius:12px;font-weight:700}
+nav button.active{background:var(--green);color:#10251d;border-color:var(--green)}
+button,select,input{font:inherit}
+button{cursor:pointer}
+button:disabled{opacity:.65;cursor:default}
+.panel,.match,.pick,.testcard{background:var(--panel);border:1px solid var(--border);border-radius:15px;padding:14px;margin-bottom:11px}
+.row{display:flex;align-items:center;gap:9px}
+.between{justify-content:space-between}
+.wrap{flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+label{display:block;font-size:12px;color:var(--muted);margin:0 0 5px}
+select,input{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:11px;width:100%;min-width:0}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.btn{background:var(--green);border:0;color:#10251d;padding:11px 14px;border-radius:10px;font-weight:800}
+.btn.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
+.btn.danger{background:#4b2732;color:#ffb4bd}
+.btn.small{padding:7px 10px;font-size:12px}
+.btn.added{background:#214b3d;color:#8cf0bf;border:1px solid #347c60}
+.muted{color:var(--muted)}
+.smalltext{font-size:12px}
+h2{font-size:20px;margin:17px 0 10px}
+h3{font-size:16px;margin:0 0 8px}
+.teamline{font-size:16px;font-weight:800}
+.league,.meta{font-size:12px;color:var(--muted)}
+.tag{font-size:11px;font-weight:800;background:var(--panel2);border-radius:7px;padding:5px 8px;white-space:nowrap}
+.tag.good{color:var(--green)}
+.tag.warn{color:#ffd58a}
+.tag.bad{color:var(--red)}
+.probrow{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}
+.prob{background:var(--panel2);padding:9px 5px;border-radius:10px;text-align:center}
+.prob strong{display:block;font-size:19px}
+.prob span{font-size:11px;color:var(--muted)}
+.progress{height:6px;background:#34445a;border-radius:8px;overflow:hidden;margin-top:5px}
+.progress span{display:block;height:100%;background:var(--green)}
+details{margin-top:10px;border-top:1px solid var(--border);padding-top:9px}
+summary{cursor:pointer;color:var(--blue);font-weight:700}
+.explain{color:var(--muted);font-size:13px}
+.explain ul{padding-left:19px}
+.explain li{margin:5px 0}
+.formchips{display:flex;gap:5px;margin:7px 0}
+.chip{width:25px;height:25px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:900;background:#34445a}
+.chip.W{background:#1e684a}
+.chip.D{background:#80601f}
+.chip.L{background:#783745}
+.empty{text-align:center;padding:28px 16px;color:var(--muted)}
+.statgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.stat{background:var(--panel2);border-radius:10px;padding:11px}
+.stat strong{font-size:22px;display:block}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:9px 6px;border-bottom:1px solid var(--border)}
+th{color:var(--muted)}
+.notice{background:#263349;border-left:3px solid var(--blue);padding:11px 12px;border-radius:7px;font-size:13px;margin:10px 0;color:#dce8f8}
+.error{color:var(--red)}
+footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
+
+/* Keep the Previous Results refresh button visible and easy to tap. */
+#refreshHistory{display:block;width:100%;min-height:46px;margin:0 0 14px;white-space:normal}
+
+#busy{position:fixed;inset:0;z-index:20;background:rgba(7,14,25,.97);display:none;align-items:center;justify-content:center;padding:22px}
+#busy.show{display:flex}
+.busybox{width:100%;max-width:420px;text-align:center}
+.spinner{width:66px;height:66px;border:5px solid #34445a;border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.busytitle{font-size:23px;font-weight:850}
+.busybar{height:9px;border-radius:8px;background:#34445a;overflow:hidden;margin:17px 0}
+.busybar span{display:block;height:100%;width:4%;background:var(--green);transition:width .25s}
+.busysteps{text-align:left;background:var(--panel);padding:15px;border-radius:13px;margin-top:20px}
+.busysteps div{padding:7px 0;color:var(--muted)}
+.busysteps .current{color:var(--green);font-weight:800}
+.busysteps .done{color:var(--text)}
+@media(min-width:600px){
+ main{padding-top:20px}
+ .match{padding:17px}
+ .controls{grid-template-columns:2fr 1fr 1fr}
+ #refreshHistory{width:auto;min-width:220px}
+}
 </style>
 </head>
 <body>
@@ -47,7 +116,19 @@ details{margin-top:10px;border-top:1px solid var(--border);padding-top:9px}summa
 <div class="notice">Predictions use earlier domestic league results. Cup and European matches are excluded from domestic league form. Estimates are not guarantees.</div><div id="topbox"></div><div id="fixtureStatus" class="muted smalltext"></div><div id="fixtureList"><div class="empty">Tap “Load / refresh predictions” to begin.</div></div>
 </section>
 <section id="accumulator" hidden><h2>Your accumulator</h2><p class="muted">Save individual match selections here. This is not a bet or bookmaker connection.</p><div id="accList"></div><div class="panel"><div class="row between"><span>Selections</span><strong id="accTotal">0</strong></div><div class="row between" style="margin-top:8px"><span>Combined probability estimate</span><strong id="accProb">—</strong></div><p class="muted smalltext">Multiplies each selection's probability and assumes outcomes are independent, so this is only a rough estimate.</p><button class="btn secondary" id="clearAcc">Clear accumulator</button></div></section>
-<section id="previous" hidden><h2>Previous Predictions & Results</h2><p class="muted">This list compares the predictions saved on this device with completed scores. Only snapshots recorded before kick-off can be assessed fairly.</p><div class="controls"><div><label for="historyDays">Look back</label><select id="historyDays"><option value="7">Last 7 days</option><option value="14" selected>Last 14 days</option></select></div><div><label for="historyLeague">Competition</label><select id="historyLeague"><option value="all">All leagues</option><option value="eng.1">Premier League</option><option value="eng.2">Championship</option><option value="eng.3">League One</option><option value="eng.4">League Two</option><option value="esp.1">La Liga</option><option value="ger.1">Bundesliga</option><option value="ita.1">Serie A</option><option value="fra.1">Ligue 1</option><option value="ned.1">Eredivisie</option><option value="uefa.champions">Champions League</option></select></div></div><div id="historyStats"></div><div id="historyList"></div><button class="btn secondary" id="refreshHistory">Refresh scores & results</button><p class="muted smalltext">Prediction snapshots are stored only in this browser. Clearing browser site data or changing device/browser may remove them.</p></section>
+
+<section id="previous" hidden>
+<h2>Previous Predictions & Results</h2>
+<p class="muted">This list compares the predictions saved on this device with completed scores. Only snapshots recorded before kick-off can be assessed fairly.</p>
+
+<!-- Moved to the top so it cannot get buried below a long results list. -->
+<button class="btn secondary" id="refreshHistory">Refresh scores & results</button>
+
+<div class="controls"><div><label for="historyDays">Look back</label><select id="historyDays"><option value="7">Last 7 days</option><option value="14" selected>Last 14 days</option></select></div><div><label for="historyLeague">Competition</label><select id="historyLeague"><option value="all">All leagues</option><option value="eng.1">Premier League</option><option value="eng.2">Championship</option><option value="eng.3">League One</option><option value="eng.4">League Two</option><option value="esp.1">La Liga</option><option value="ger.1">Bundesliga</option><option value="ita.1">Serie A</option><option value="fra.1">Ligue 1</option><option value="ned.1">Eredivisie</option><option value="uefa.champions">Champions League</option></select></div></div>
+<div id="historyStats"></div><div id="historyList"></div>
+<p class="muted smalltext">Prediction snapshots are stored only in this browser. Clearing browser site data or changing device/browser may remove them.</p>
+</section>
+
 <section id="test" hidden><h2>Model Test</h2><p>Compare five weighting combinations using historical league matches. Each match is predicted using earlier results only.</p><div class="notice"><strong>Important:</strong> this is a chronological back-test, not proof of future performance. A model that wins this sample may not win the next one.</div><button class="btn" id="runTest">Run weighting test</button><div id="testStatus" class="muted smalltext" style="margin:10px 0"></div><div id="testResults"></div><h3>Weightings compared</h3><div class="tablewrap"><table><thead><tr><th>Option</th><th>League</th><th>Form</th><th>Trend</th></tr></thead><tbody><tr><td>A</td><td>60%</td><td>30%</td><td>10%</td></tr><tr><td>B</td><td>50%</td><td>40%</td><td>10%</td></tr><tr><td>C</td><td>40%</td><td>50%</td><td>10%</td></tr><tr><td>D</td><td>40%</td><td>45%</td><td>15%</td></tr><tr><td>E</td><td>30%</td><td>55%</td><td>15%</td></tr></tbody></table></div></section>
 <section id="settings" hidden><h2>Prediction Settings</h2><div class="panel"><h3>How should the model be selected?</h3><label class="row" style="padding:10px 0"><input type="radio" name="mode" value="manual" id="modeManual" style="width:auto"> <span><strong>Manual</strong><br><span class="muted smalltext">I choose which model to use.</span></span></label><label class="row" style="padding:10px 0"><input type="radio" name="mode" value="auto" id="modeAuto" style="width:auto"> <span><strong>Auto</strong><br><span class="muted smalltext">Run a fresh historical test and use the best observed model, if enough matches are available.</span></span></label><div style="margin-top:12px"><label for="modelChoice">Choose model (Manual mode)</label><select id="modelChoice"><option value="0">Option A — 60% league / 30% form / 10% trend</option><option value="1">Option B — 50% league / 40% form / 10% trend</option><option value="2">Option C — 40% league / 50% form / 10% trend</option><option value="3">Option D — 40% league / 45% form / 15% trend</option><option value="4">Option E — 30% league / 55% form / 15% trend</option></select></div><div style="margin-top:12px"><label for="minSample">Minimum eligible matches before Auto changes model</label><select id="minSample"><option value="50">50 matches</option><option value="100" selected>100 matches</option><option value="150">150 matches</option><option value="200">200 matches</option></select></div><p class="muted smalltext">Auto uses the highest raw accuracy in the historical test. Because it selects the winner from that same sample, its advantage may be overstated. If data is insufficient, it falls back to your manual choice.</p><button class="btn" id="saveSettings">Save settings</button><p id="settingsStatus" class="muted smalltext"></p></div></section>
 <footer>Footy Picks · ESPN public scoreboard data · Predictions are estimates.</footer>
