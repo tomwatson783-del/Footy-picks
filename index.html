@@ -3,661 +3,577 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#101827">
 <title>Footy Picks</title>
 <style>
+:root{color-scheme:dark;--bg:#101827;--panel:#1a2638;--panel2:#223147;--text:#f5f7fb;--muted:#a9b7ca;--green:#54d69b;--blue:#80b7ff;--red:#ff8989;--border:#34445a}
 *{box-sizing:border-box}
-body{margin:0;background:#101827;color:#f4f7fb;font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif}
-header{background:#19273a;padding:20px 16px}
-h1{margin:0;font-size:27px}
-main{max-width:760px;margin:auto;padding:14px}
-nav{display:flex;gap:7px;overflow-x:auto;margin:12px 0}
-button,select{font:inherit;border-radius:10px;padding:12px;border:1px solid #43536b}
-button{background:#293951;color:white;cursor:pointer}
-button:disabled{opacity:.6}
-button.primary,nav button.active{background:#65e6a0;color:#10251b;border:0;font-weight:700}
-select{background:#111d2e;color:white;width:100%;margin:5px 0 12px}
-label{display:block;color:#a8b6c9;font-size:14px}
-.panel,.match{background:#1c293b;border-radius:14px;padding:15px;margin:12px 0}
-.muted,small{color:#a8b6c9}
-.probs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}
-.prob{background:#111d2e;border-radius:9px;text-align:center;padding:10px 3px}
-.prob strong{display:block;color:#65e6a0;font-size:21px}
-.badge{color:#65e6a0;font-size:12px}
-.modelnote{font-size:13px;line-height:1.5;color:#b7c6d8}
-#status,#topStatus{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}
-details{background:#111d2e;border-radius:10px;padding:12px;margin:10px 0}
-summary{cursor:pointer;font-weight:600}
-.reason{font-size:14px;line-height:1.55;color:#d4deea}
-.conf{display:inline-block;border:1px solid #43536b;border-radius:8px;padding:6px 9px;margin:4px 0}
-[hidden]{display:none!important}
-footer{font-size:12px;color:#a8b6c9;padding:20px 0;line-height:1.5}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;line-height:1.45}
+header{padding:22px 16px 14px;background:#131f30;position:sticky;top:0;z-index:5;border-bottom:1px solid var(--border)}
+h1{font-size:27px;margin:0;font-weight:850;letter-spacing:-.7px}
+header p{color:var(--muted);margin:3px 0 0;font-size:13px}
+main{max-width:820px;margin:auto;padding:14px 12px 95px}
+nav{display:flex;gap:6px;overflow-x:auto;margin:0 0 15px;padding-bottom:3px}
+nav button{flex:0 0 auto;border:1px solid var(--border);background:var(--panel);color:var(--muted);padding:10px 13px;border-radius:12px;font-weight:700}
+nav button.active{background:var(--green);color:#10251d;border-color:var(--green)}
+button,select,input{font:inherit}
+button{cursor:pointer}
+.panel,.match,.pick,.testcard{background:var(--panel);border:1px solid var(--border);border-radius:15px;padding:14px;margin-bottom:11px}
+.row{display:flex;align-items:center;gap:9px}
+.between{justify-content:space-between}
+.wrap{flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+label{display:block;font-size:12px;color:var(--muted);margin:0 0 5px}
+select,input{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:11px;width:100%;min-width:0}
+.controls{display:grid;grid-template-columns:1.5fr 1fr;gap:10px;margin-bottom:12px}
+.btn{background:var(--green);border:0;color:#10251d;padding:11px 14px;border-radius:10px;font-weight:800}
+.btn.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
+.btn.danger{background:#4b2732;color:#ffb4bd}
+.btn.small{padding:7px 10px;font-size:12px}
+.muted{color:var(--muted)}
+.smalltext{font-size:12px}
+h2{font-size:20px;margin:17px 0 10px}
+h3{font-size:16px;margin:0 0 8px}
+.teamline{font-size:17px;font-weight:800}
+.league,.meta{font-size:12px;color:var(--muted)}
+.tag{font-size:11px;font-weight:800;background:var(--panel2);border-radius:7px;padding:5px 8px;white-space:nowrap}
+.tag.good{color:var(--green)}
+.tag.warn{color:#ffd58a}
+.probrow{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}
+.prob{background:var(--panel2);padding:9px 5px;border-radius:10px;text-align:center}
+.prob strong{display:block;font-size:19px}
+.prob span{font-size:11px;color:var(--muted)}
+.progress{height:6px;background:#34445a;border-radius:8px;overflow:hidden;margin-top:5px}
+.progress span{display:block;height:100%;background:var(--green)}
+details{margin-top:10px;border-top:1px solid var(--border);padding-top:9px}
+summary{cursor:pointer;color:var(--blue);font-weight:700}
+.explain{color:var(--muted);font-size:13px}
+.explain ul{padding-left:19px}
+.explain li{margin:5px 0}
+.formchips{display:flex;gap:5px;margin:7px 0}
+.chip{width:25px;height:25px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:900;background:#34445a}
+.chip.W{background:#1e684a}.chip.D{background:#80601f}.chip.L{background:#783745}
+.empty{text-align:center;padding:35px 16px;color:var(--muted)}
+.statgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.stat{background:var(--panel2);border-radius:10px;padding:11px}
+.stat strong{font-size:22px;display:block}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:9px 6px;border-bottom:1px solid var(--border);white-space:nowrap}
+th{color:var(--muted)}
+.notice{background:#263349;border-left:3px solid var(--blue);padding:11px 12px;border-radius:7px;font-size:13px;margin:10px 0;color:#dce8f8}
+.error{color:var(--red)}
+footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
+@media(min-width:600px){main{padding-top:20px}.match{padding:17px}.controls{grid-template-columns:2fr 1fr 1fr}}
 </style>
 </head>
 <body>
 <header>
-<h1>⚽ Footy Picks</h1>
-<p class="muted">Predictions · Match analysis · Top 10 · Accumulators · Tracker</p>
+  <div class="row between">
+    <div><h1>⚽ Footy Picks</h1><p>League-aware predictions, with the reasoning shown.</p></div>
+    <span class="tag" id="connection">Not loaded</span>
+  </div>
 </header>
 <main>
-<nav>
-<button class="active" data-tab="fixtures">Fixtures</button>
-<button data-tab="top">Top 10</button>
-<button data-tab="acc">Accumulator (<span id="count">0</span>)</button>
-<button data-tab="tracker">Tracker</button>
+<nav id="tabs">
+  <button class="active" data-tab="fixtures">Fixtures</button>
+  <button data-tab="accumulator">Accumulator <span id="accCount"></span></button>
+  <button data-tab="tracker">Tracker</button>
+  <button data-tab="test">Model Test</button>
 </nav>
-
 <section id="fixtures">
-<div class="panel">
-<label for="league">Competition</label>
-<select id="league">
-<option value="eng.1">Premier League</option>
-<option value="eng.2">Championship</option>
-<option value="eng.3">League One</option>
-<option value="eng.4">League Two</option>
-<option value="esp.1">La Liga</option>
-<option value="ger.1">Bundesliga</option>
-<option value="ita.1">Serie A</option>
-<option value="fra.1">Ligue 1</option>
-<option value="ned.1">Eredivisie</option>
-<option value="uefa.champions">Champions League</option>
-</select>
-<label for="days">Look ahead</label>
-<select id="days">
-<option value="7">Next 7 days</option>
-<option value="14" selected>Next 14 days</option>
-<option value="30">Next 30 days</option>
-</select>
-<button id="load" class="primary" style="width:100%">Load fixtures & form</button>
-<p id="status" class="muted" role="status">Tap Load fixtures to get started.</p>
-</div>
-<div id="matches"></div>
+  <div class="controls">
+    <div><label for="league">Competition</label>
+      <select id="league">
+        <option value="all">All leagues</option>
+        <option value="eng.1">Premier League</option>
+        <option value="eng.2" selected>Championship</option>
+        <option value="eng.3">League One</option>
+        <option value="eng.4">League Two</option>
+        <option value="esp.1">La Liga</option>
+        <option value="ger.1">Bundesliga</option>
+        <option value="ita.1">Serie A</option>
+        <option value="fra.1">Ligue 1</option>
+        <option value="ned.1">Eredivisie</option>
+        <option value="uefa.champions">Champions League</option>
+      </select>
+    </div>
+    <div><label for="days">Fixture window</label>
+      <select id="days"><option value="7">Next 7 days</option><option value="14" selected>Next 14 days</option><option value="30">Next 30 days</option></select>
+    </div>
+    <div><label for="sort">Sort by</label>
+      <select id="sort"><option value="date">Kick-off date</option><option value="confidence">Confidence</option></select>
+    </div>
+  </div>
+  <div class="row wrap" style="margin-bottom:12px">
+    <button class="btn" id="load">Load fixtures and ratings</button>
+    <button class="btn secondary" id="top10">Show Top 10 picks</button>
+  </div>
+  <div class="notice">The model uses league results only for league form. Cup and European games do not count towards domestic league form. Predictions are estimates, not guarantees.</div>
+  <div id="topbox"></div>
+  <div id="fixtureStatus" class="muted smalltext"></div>
+  <div id="fixtureList"><div class="empty">Tap “Load fixtures and ratings” to begin.</div></div>
 </section>
 
-<section id="top" hidden>
-<div class="panel">
-<h2>Top 10 picks of the week</h2>
-<p class="muted">Ranks upcoming matches across supported leagues. A higher confidence score means a clearer model signal and better data coverage, not a guarantee of winning.</p>
-<button id="loadTop" class="primary" style="width:100%">Find top 10 picks</button>
-<p id="topStatus" class="muted" role="status">Tap to analyse the available leagues.</p>
-<div id="topList"></div>
-</div>
-</section>
-
-<section id="acc" hidden>
-<div class="panel">
-<h2>Accumulator</h2>
-<p class="muted">Choose picks from Fixtures or Top 10.</p>
-<div id="accList">No selections yet.</div>
-<button id="save" class="primary" style="width:100%">Save to tracker</button>
-<button id="clearAcc" style="width:100%;margin-top:8px">Clear selections</button>
-</div>
+<section id="accumulator" hidden>
+  <h2>Your accumulator</h2>
+  <p class="muted">Add individual match outcomes from Fixtures. This is a saved selection list, not a bet and not a bookmaker connection.</p>
+  <div id="accList"></div>
+  <div class="panel">
+    <div class="row between"><span>Selections</span><strong id="accTotal">0</strong></div>
+    <div class="row between" style="margin-top:8px"><span>Combined probability estimate</span><strong id="accProb">—</strong></div>
+    <p class="muted smalltext">The combined figure multiplies the model probabilities and assumes independence. Real match outcomes are not perfectly independent, so treat this as a rough mathematical estimate only.</p>
+    <button class="btn secondary" id="clearAcc">Clear accumulator</button>
+    <button class="btn" id="saveAcc">Save to tracker</button>
+  </div>
 </section>
 
 <section id="tracker" hidden>
-<div class="panel">
-<h2>Pick tracker</h2>
-<p class="muted">Saved on this device.</p>
-<div id="trackList">No saved picks yet.</div>
-<button id="clearTrack" style="width:100%;margin-top:12px">Clear tracker</button>
-</div>
+  <h2>Prediction tracker</h2>
+  <p class="muted">Saved selections stay in this browser on this device. Completed scores are checked against the results data when you refresh the tracker.</p>
+  <div id="trackerStats"></div>
+  <div id="trackerList"></div>
+  <button class="btn secondary" id="refreshTracker">Refresh saved results</button>
+  <button class="btn danger" id="clearTracker">Clear tracker</button>
 </section>
 
-<footer>
-The model uses historical scores, opponent-adjusted team ratings, recent results, goals scored and conceded, and home/away performance. Confidence measures model clarity and data coverage, not the probability a pick will win. Public data coverage varies by league. No predictions are guaranteed.
-</footer>
+<section id="test" hidden>
+  <h2>Model Test</h2>
+  <p>Compare five weighting combinations using historical league matches. For each match, the model builds the table and recent-form scores from earlier results only, then predicts before adding that match's result.</p>
+  <div class="notice"><strong>Important:</strong> this is a chronological back-test, not proof of future performance. The data provider may omit matches or have incomplete historical coverage. The test reports how many matches were actually evaluated.</div>
+  <button class="btn" id="runTest">Run weighting test</button>
+  <div id="testStatus" class="muted smalltext" style="margin:10px 0"></div>
+  <div id="testResults"></div>
+  <h3>What is being compared?</h3>
+  <div class="tablewrap">
+    <table><thead><tr><th>Version</th><th>League</th><th>Last 5</th><th>Trend</th></tr></thead>
+    <tbody>
+      <tr><td>A — Original</td><td>60%</td><td>30%</td><td>10%</td></tr>
+      <tr><td>B</td><td>50%</td><td>40%</td><td>10%</td></tr>
+      <tr><td>C</td><td>40%</td><td>50%</td><td>10%</td></tr>
+      <tr><td>D</td><td>40%</td><td>45%</td><td>15%</td></tr>
+      <tr><td>E</td><td>30%</td><td>55%</td><td>15%</td></tr>
+    </tbody></table>
+  </div>
+  <p class="muted smalltext">The test chooses the outcome with the highest estimated probability. It also shows a simple home-win baseline. If the sample is small, differences between models may be noise rather than a real improvement.</p>
+</section>
+<footer>Footy Picks · Data from ESPN's public scoreboard endpoint · No betting or guaranteed outcomes.</footer>
 </main>
-
 <script>
-(function(){
 "use strict";
 
-const $=id=>document.getElementById(id);
-
-const leagues={
-"eng.1":"Premier League",
-"eng.2":"Championship",
-"eng.3":"League One",
-"eng.4":"League Two",
-"esp.1":"La Liga",
-"ger.1":"Bundesliga",
-"ita.1":"Serie A",
-"fra.1":"Ligue 1",
-"ned.1":"Eredivisie",
-"uefa.champions":"Champions League"
+const LEAGUES = {
+ "eng.1":"Premier League","eng.2":"Championship","eng.3":"League One",
+ "eng.4":"League Two","esp.1":"La Liga","ger.1":"Bundesliga",
+ "ita.1":"Serie A","fra.1":"Ligue 1","ned.1":"Eredivisie",
+ "uefa.champions":"Champions League"
 };
-const leagueIds=Object.keys(leagues);
-
-let fixtures=[];
-let picks=[];
-let busy=false;
-let topBusy=false;
-let models={};
-let topCache=[];
-let tracker=read("fp_tracker",[]);
-
-function read(key,fallback){
-try{return JSON.parse(localStorage.getItem(key))??fallback}
-catch(e){return fallback}
-}
-function saveStorage(){
-try{localStorage.setItem("fp_tracker",JSON.stringify(tracker))}
-catch(e){setStatus("Unable to save. Device storage may be full.")}
-}
-function esc(v){
-return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-}
-function setStatus(s){$("status").textContent=s}
-function setTopStatus(s){$("topStatus").textContent=s}
-function showTab(id){
-["fixtures","top","acc","tracker"].forEach(t=>{
-$(t).hidden=t!==id;
-document.querySelector('[data-tab="'+t+'"]').classList.toggle("active",t===id);
-});
-}
-document.querySelectorAll("[data-tab]").forEach(b=>{
-b.addEventListener("click",()=>showTab(b.dataset.tab));
-});
-
-function monthKey(d){
-return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0");
-}
-function formatDate(s){
-const d=new Date(s);
-return isNaN(d.getTime())?"Date TBC":d.toLocaleString([],{
-weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"
-});
-}
-async function fetchJSON(url){
-const c=new AbortController();
-const timer=setTimeout(()=>c.abort(),15000);
-try{
-const r=await fetch(url,{signal:c.signal,cache:"no-store"});
-if(!r.ok)throw Error("HTTP "+r.status);
-return await r.json();
-}catch(e){
-if(e.name==="AbortError")throw Error("Request timed out");
-if(e instanceof TypeError)throw Error("Network connection failed");
-throw e;
-}finally{clearTimeout(timer)}
-}
-function parseEvent(ev,league){
-const comp=ev?.competitions?.[0];
-const teams=comp?.competitors||[];
-const h=teams.find(t=>t.homeAway==="home");
-const a=teams.find(t=>t.homeAway==="away");
-if(!h||!a)return null;
-function score(t){
-if(t.score===undefined||t.score===null||t.score==="")return null;
-const n=Number(t.score);
-return Number.isFinite(n)?n:null;
-}
-return {
-id:String(ev.id),
-date:ev.date,
-home:h.team?.displayName||h.team?.name||"Home",
-away:a.team?.displayName||a.team?.name||"Away",
-league:leagues[league]||league,
-leagueId:league,
-state:ev.status?.type?.state||"unknown",
-homeScore:score(h),
-awayScore:score(a)
+const WEIGHTS = [
+ {name:"A — Original",league:.60,form:.30,trend:.10},
+ {name:"B — 50/40/10",league:.50,form:.40,trend:.10},
+ {name:"C — 40/50/10",league:.40,form:.50,trend:.10},
+ {name:"D — 40/45/15",league:.40,form:.45,trend:.15},
+ {name:"E — 30/55/15",league:.30,form:.55,trend:.15}
+];
+const $ = id => document.getElementById(id);
+const state = {
+ matches:[], byLeague:{}, loaded:false, topMode:false,
+ acc:readStore("fp_acc",[]), tracker:readStore("fp_tracker",[]),
+ loading:false, lastTest:null
 };
+function readStore(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback}catch{return fallback}}
+function store(key,value){try{localStorage.setItem(key,JSON.stringify(value))}catch{}}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function dateKey(d){return new Date(d).toISOString().slice(0,10)}
+function fmtDate(d){return new Date(d).toLocaleString(undefined,{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
+function eventId(m){return `${m.leagueId}_${m.id}`}
+function getOutcome(h,a){return h>a?"H":h<a?"A":"D"}
+function outcomeName(o){return o==="H"?"Home win":o==="A"?"Away win":"Draw"}
+function clamp(n,a,b){return Math.max(a,Math.min(b,n))}
+function validScore(m){return m.homeScore!==null&&m.awayScore!==null&&Number.isFinite(m.homeScore)&&Number.isFinite(m.awayScore)}
+function isFinished(m){return m.state==="post"&&validScore(m)}
+function normaliseEvent(e,leagueId){
+ const c=e.competitions?.[0], comps=c?.competitors||[];
+ const h=comps.find(x=>x.homeAway==="home"),a=comps.find(x=>x.homeAway==="away");
+ if(!h||!a)return null;
+ const rawDate=e.date||c.date;
+ if(!rawDate)return null;
+ const st=e.status?.type?.state||c.status?.type?.state||"pre";
+ const hs=h.score!==undefined&&h.score!==null&&h.score!==""?Number(h.score):null;
+ const as=a.score!==undefined&&a.score!==null&&a.score!==""?Number(a.score):null;
+ return {
+  id:String(e.id),leagueId,league:LEAGUES[leagueId]||leagueId,date:rawDate,state:st,
+  homeId:String(h.team?.id||h.team?.abbreviation||h.team?.displayName),
+  awayId:String(a.team?.id||a.team?.abbreviation||a.team?.displayName),
+  home:h.team?.displayName||"Home",away:a.team?.displayName||"Away",
+  homeScore:Number.isFinite(hs)?hs:null,awayScore:Number.isFinite(as)?as:null,
+  venue:c.venue?.fullName||"",probs:null,prediction:null,confidence:0
+ };
 }
-function expectedScore(diff){
-return 1/(1+Math.pow(10,-diff/400));
+async function fetchMonth(leagueId,month){
+ const url=`https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueId}/scoreboard?dates=${month}&limit=300`;
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
+ try{
+  const res=await fetch(url,{signal:controller.signal,cache:"no-store"});
+  if(!res.ok)throw new Error(`ESPN returned HTTP ${res.status}`);
+  const data=await res.json();
+  return (data.events||[]).map(e=>normaliseEvent(e,leagueId)).filter(Boolean);
+ }finally{clearTimeout(timer)}
 }
-function clamp(n,lo,hi){
-return Math.max(lo,Math.min(hi,n));
+function monthsBack(count){
+ const out=[],now=new Date();
+ for(let i=count-1;i>=0;i--){
+  const d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-i,1));
+  out.push(`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}`);
+ }
+ return out;
 }
-
-function buildModel(history){
-const ratings={};
-const games={};
-const recent={};
-const played=history.filter(m=>
-m.state==="post"&&m.homeScore!==null&&m.awayScore!==null
-).sort((a,b)=>new Date(a.date)-new Date(b.date));
-
-const rating=t=>ratings[t]??1500;
-
-played.forEach(m=>{
-const h=m.home,a=m.away,hs=m.homeScore,as=m.awayScore;
-ratings[h]??=1500;
-ratings[a]??=1500;
-games[h]??=[];
-games[a]??=[];
-recent[h]??=[];
-recent[a]??=[];
-
-const rh=rating(h),ra=rating(a);
-const expH=expectedScore(rh+60-ra);
-const actual=hs>as?1:hs<as?0:0.5;
-const margin=Math.abs(hs-as);
-const multiplier=margin===0?1:Math.min(
-2.1,Math.log(margin+1)*(2.2/(Math.abs(rh-ra)*0.001+2.2))
-);
-const change=24*multiplier*(actual-expH);
-ratings[h]=rh+change;
-ratings[a]=ra-change;
-
-const hp=hs>as?3:hs===as?1:0;
-const ap=as>hs?3:as===hs?1:0;
-
-games[h].push({
-date:m.date,opponent:a,scored:hs,conceded:as,
-venue:"home",oppRating:ra,points:hp
-});
-games[a].push({
-date:m.date,opponent:h,scored:as,conceded:hs,
-venue:"away",oppRating:rh,points:ap
-});
-
-recent[h].push({
-date:m.date,opponent:a,scored:hs,conceded:as,
-venue:"home",points:hp,
-expected:3*expH,oppRating:ra
-});
-recent[a].push({
-date:m.date,opponent:h,scored:as,conceded:hs,
-venue:"away",points:ap,
-expected:3*expectedScore(ra-rh-60),oppRating:rh
-});
-});
-
-const form={};
-Object.keys(recent).forEach(team=>{
-const last=recent[team].slice(-5);
-let sum=0,weights=0;
-last.forEach((g,i)=>{
-const w=.7+.3*(i+1)/last.length;
-sum+=(g.points-g.expected)*w;
-weights+=w;
-});
-form[team]=weights?sum/weights:0;
-});
-
-return {ratings,games,recent,form,matches:played.length};
+async function fetchLeague(leagueId,count=6){
+ const months=monthsBack(count),all=[];
+ for(const month of months){
+  try{all.push(...await fetchMonth(leagueId,month))}
+  catch(e){console.warn("Month unavailable",leagueId,month,e.message)}
+ }
+ const unique=new Map();
+ for(const m of all)unique.set(eventId(m),m);
+ return [...unique.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
 }
-
-function getStats(model,team,venue){
-const all=model.games[team]||[];
-const filtered=all.filter(g=>!venue||g.venue===venue);
-const selected=filtered.slice(-8);
-if(!selected.length){
-return {scored:1.35,conceded:1.35,count:0,games:[]};
+async function fetchAllLeagues(count=6){
+ const all=[],errors=[];
+ for(const id of Object.keys(LEAGUES)){
+  try{
+   const rows=await fetchLeague(id,count);
+   if(rows.length)all.push(...rows);
+   else errors.push(LEAGUES[id]);
+  }catch(e){errors.push(LEAGUES[id]);console.warn(e)}
+ }
+ const unique=new Map();
+ all.forEach(m=>unique.set(eventId(m),m));
+ return {matches:[...unique.values()].sort((a,b)=>new Date(a.date)-new Date(b.date)),errors};
 }
-return {
-scored:selected.reduce((s,g)=>s+g.scored,0)/selected.length,
-conceded:selected.reduce((s,g)=>s+g.conceded,0)/selected.length,
-count:selected.length,
-games:selected
-};
+function teamKey(m,side){return `${m.leagueId}:${side==="H"?m.homeId:m.awayId}`}
+function teamName(m,side){return side==="H"?m.home:m.away}
+function addToTable(table,m){
+ if(!isFinished(m))return;
+ for(const side of ["H","A"]){
+  const key=teamKey(m,side),other=side==="H"?"A":"H";
+  if(!table[key])table[key]={key,name:teamName(m,side),played:0,points:0,gf:0,ga:0,history:[]};
+  const t=table[key],gf=side==="H"?m.homeScore:m.awayScore,ga=side==="H"?m.awayScore:m.homeScore;
+  const points=gf>ga?3:gf===ga?1:0;
+  t.played++;t.points+=points;t.gf+=gf;t.ga+=ga;
+  t.history.push({date:m.date,points,gf,ga,result:gf>ga?"W":gf===ga?"D":"L",opponent:teamName(m,other)});
+ }
 }
-
-function poisson(lambda,k){
-let p=Math.exp(-lambda);
-for(let i=1;i<=k;i++)p*=lambda/i;
-return p;
+function makeTable(matches){
+ const table={};
+ for(const m of matches)if(isFinished(m))addToTable(table,m);
+ return table;
 }
-
-function analyse(match,model){
-const rh=model.ratings[match.home]??1500;
-const ra=model.ratings[match.away]??1500;
-const fh=model.form[match.home]??0;
-const fa=model.form[match.away]??0;
-
-const hg=getStats(model,match.home,null);
-const ag=getStats(model,match.away,null);
-const hh=getStats(model,match.home,"home");
-const aa=getStats(model,match.away,"away");
-
-const homeAttack=hh.count>=3?.6*hh.scored+.4*hg.scored:hg.scored;
-const homeDefence=hh.count>=3?.6*hh.conceded+.4*hg.conceded:hg.conceded;
-const awayAttack=aa.count>=3?.6*aa.scored+.4*ag.scored:ag.scored;
-const awayDefence=aa.count>=3?.6*aa.conceded+.4*ag.conceded:ag.conceded;
-
-const diff=clamp(rh-ra+60+(fh-fa)*16,-450,450);
-const homeFactor=Math.exp(diff/1100);
-const awayFactor=Math.exp(-diff/1100);
-
-const homeGoals=clamp(
-1.42*Math.pow(clamp(homeAttack/1.4,.45,2.1),.55)*
-Math.pow(clamp(awayDefence/1.3,.45,2.1),.35)*homeFactor,.25,3.5
-);
-const awayGoals=clamp(
-1.15*Math.pow(clamp(awayAttack/1.2,.45,2.1),.55)*
-Math.pow(clamp(homeDefence/1.4,.45,2.1),.35)*awayFactor,.2,3.2
-);
-
-let hw=0,dr=0,aw=0,total=0;
-for(let h=0;h<=8;h++){
-for(let a=0;a<=8;a++){
-const p=poisson(homeGoals,h)*poisson(awayGoals,a);
-total+=p;
-if(h>a)hw+=p;
-else if(h===a)dr+=p;
-else aw+=p;
-}}
-const raw=total?[hw/total*100,dr/total*100,aw/total*100]:[45,27,28];
-const probs=raw.map(Math.round);
-probs[2]+=100-probs.reduce((s,n)=>s+n,0);
-
-const names=["HOME","DRAW","AWAY"];
-let best=0;
-for(let i=1;i<3;i++)if(probs[i]>probs[best])best=i;
-const sorted=probs.slice().sort((a,b)=>b-a);
-const gap=sorted[0]-sorted[1];
-
-const homeGames=model.games[match.home]||[];
-const awayGames=model.games[match.away]||[];
-const sampleQuality=Math.min(1,model.matches/80);
-const teamQuality=Math.min(1,Math.min(homeGames.length,awayGames.length)/8);
-const clarity=clamp((probs[best]-33.33)/5,0,6);
-const separation=clamp(gap/8,0,2);
-const confidence=clamp(Math.round(1+clarity+separation+2*sampleQuality+2*teamQuality),1,10);
-
-const reasons=[];
-if(rh-ra>35)reasons.push(match.home+" has the stronger historical rating ("+Math.round(rh)+" vs "+Math.round(ra)+").");
-else if(ra-rh>35)reasons.push(match.away+" has the stronger historical rating ("+Math.round(ra)+" vs "+Math.round(rh)+").");
-else reasons.push("Team ratings are relatively close ("+Math.round(rh)+" vs "+Math.round(ra)+").");
-
-if(fh-fa>.35)reasons.push(match.home+" has performed better than expected against its recent opponents.");
-else if(fa-fh>.35)reasons.push(match.away+" has performed better than expected against its recent opponents.");
-else reasons.push("Recent opponent-adjusted form is relatively even.");
-
-if(hh.count>=3&&aa.count>=3){
-if(hh.scored>aa.scored+.35)reasons.push(match.home+" has the better recent home scoring rate.");
-if(aa.conceded>hh.conceded+.35)reasons.push(match.away+" has conceded more often away.");
-if(aa.scored>hh.scored+.35)reasons.push(match.away+" has a strong away scoring rate.");
+function leagueRankScores(table,leagueId){
+ const teams=Object.values(table).filter(t=>t.key.startsWith(leagueId+":"));
+ teams.sort((a,b)=>(b.points/Math.max(1,b.played)-a.points/Math.max(1,a.played))||
+  ((b.gf-b.ga)/Math.max(1,b.played)-(a.gf-a.ga)/Math.max(1,a.played))||
+  ((b.gf/Math.max(1,b.played))-(a.gf/Math.max(1,a.played))));
+ const n=teams.length;
+ const scores={};
+ teams.forEach((t,i)=>{
+  const rankScore=n<=1?.5:1-i/(n-1);
+  const ppg=t.points/Math.max(1,t.played);
+  const gdpg=(t.gf-t.ga)/Math.max(1,t.played);
+  // A normalised table-strength score, based on points per game,
+  // with a smaller goal-difference component to separate similar teams.
+  scores[t.key]=clamp(.72*rankScore+.20*(ppg/3)+.08*((clamp(gdpg,-2,2)+2)/4),0,1);
+ });
+ return scores;
 }
-if(reasons.length<2)reasons.push("Home advantage and recent goals scored and conceded also influence the estimate.");
-
-return {
-match,probs,outcome:names[best],bestIndex:best,
-probability:probs[best],confidence,
-confidenceText:confidence>=8?"Strong model signal":
-confidence>=6?"Moderate model signal":
-confidence>=4?"Mixed evidence":"Uncertain model signal",
-ratings:[Math.round(rh),Math.round(ra)],
-form:[fh,fa],homeGoals,awayGoals,reasons,
-recentHome:(model.recent[match.home]||[]).slice(-3),
-recentAway:(model.recent[match.away]||[]).slice(-3),
-dataMatches:model.matches
-};
+function teamFeatures(table,rankScores,key){
+ const t=table[key];
+ if(!t)return {league:.5,form:.5,trend:.5,played:0,history:[]};
+ const hist=t.history.slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
+ const recent=hist.slice(-5);
+ const form=recent.length?recent.reduce((s,x)=>s+x.points,0)/(recent.length*3):.5;
+ let trend=.5;
+ if(recent.length>=4){
+  const earlier=recent.slice(0,Math.max(1,recent.length-2));
+  const latest=recent.slice(-2);
+  const ppg=a=>a.reduce((s,x)=>s+x.points,0)/a.length/3;
+  trend=clamp(.5+(ppg(latest)-ppg(earlier))*.5,0,1);
+ }
+ return {league:rankScores[key]??.5,form,trend,played:t.played,history:recent};
 }
-
-function whyHTML(a){
-const m=a.match;
-function lines(arr,team){
-if(!arr.length)return "<li>Recent results unavailable.</li>";
-return arr.map(g=>"<li>"+esc(team+" "+g.scored+"–"+g.conceded+" vs "+g.opponent)+"</li>").join("");
+function poisson(k,lambda){
+ let p=Math.exp(-lambda);
+ for(let i=1;i<=k;i++)p*=lambda/i;
+ return p;
 }
-return `<details><summary>Why this prediction?</summary>
-<div class="reason">
-<p><strong>Summary:</strong> ${esc(a.reasons.join(" "))}</p>
-<p><strong>Team ratings:</strong> ${esc(m.home)} ${a.ratings[0]} · ${esc(m.away)} ${a.ratings[1]}. Both teams start at the same baseline; results against stronger opposition influence ratings.</p>
-<p><strong>Recent form:</strong> the model compares recent points with what it expected against those opponents, rather than counting wins alone.</p>
-<p><strong>Home/away:</strong> home advantage is included. Recent home and away scoring and defending records are used when enough matches are available.</p>
-<p><strong>Recent ${esc(m.home)} results</strong></p><ul>${lines(a.recentHome,m.home)}</ul>
-<p><strong>Recent ${esc(m.away)} results</strong></p><ul>${lines(a.recentAway,m.away)}</ul>
-<p><strong>Estimated goals:</strong> ${a.homeGoals.toFixed(1)} for ${esc(m.home)} and ${a.awayGoals.toFixed(1)} for ${esc(m.away)}. These feed into the three outcome probabilities.</p>
-<p><strong>Data:</strong> ${a.dataMatches} completed matches were analysed for this competition. Limited history means extra caution is sensible.</p>
-</div></details>`;
+function outcomeProbabilities(homeLambda,awayLambda){
+ const max=8,ph=[],pa=[];
+ for(let i=0;i<=max;i++){ph.push(poisson(i,homeLambda));pa.push(poisson(i,awayLambda))}
+ let H=0,D=0,A=0;
+ for(let h=0;h<=max;h++)for(let a=0;a<=max;a++){
+  const p=ph[h]*pa[a];
+  if(h>a)H+=p;else if(h===a)D+=p;else A+=p;
+ }
+ const sum=H+D+A||1;
+ return {H:H/sum,D:D/sum,A:A/sum};
 }
-
-function fixtureCard(a,withControls){
-const m=a.match;
-const existing=picks.find(p=>p.id===m.id);
-return `<article class="match">
-<div class="badge">${esc(m.league)}</div>
-<p class="muted">${esc(formatDate(m.date))}</p>
-<h3>${esc(m.home)} vs ${esc(m.away)}</h3>
-<div class="probs">
-<div class="prob"><small>HOME WIN</small><strong>${a.probs[0]}%</strong></div>
-<div class="prob"><small>DRAW</small><strong>${a.probs[1]}%</strong></div>
-<div class="prob"><small>AWAY WIN</small><strong>${a.probs[2]}%</strong></div>
-</div>
-<p><span class="conf">Confidence: <strong>${a.confidence}/10</strong></span></p>
-<p class="modelnote">Model favours <strong>${esc(a.outcome==="HOME"?m.home:a.outcome==="AWAY"?m.away:"a draw")}</strong> (${a.probability}%). ${esc(a.confidenceText)}.</p>
-${whyHTML(a)}
-${withControls?`
-<label for="pick-${esc(m.id)}">Choose outcome</label>
-<select id="pick-${esc(m.id)}" data-select="${esc(m.id)}">
-<option value="">Select outcome</option>
-<option value="HOME" ${existing?.outcome==="HOME"?"selected":""}>Home win (${a.probs[0]}%)</option>
-<option value="DRAW" ${existing?.outcome==="DRAW"?"selected":""}>Draw (${a.probs[1]}%)</option>
-<option value="AWAY" ${existing?.outcome==="AWAY"?"selected":""}>Away win (${a.probs[2]}%)</option>
-</select>
-<button class="primary" data-add="${esc(m.id)}" style="width:100%">Add to accumulator</button>`:""}
-</article>`;
+function teamAttackDefence(table,key){
+ const t=table[key];
+ if(!t||t.played===0)return {attack:1.2,defence:1.2};
+ return {
+  attack:clamp(t.gf/t.played,.45,2.7),
+  defence:clamp(t.ga/t.played,.45,2.7)
+ };
 }
-
-function monthsFor(now,end,historyMonths){
-const first=new Date(now.getFullYear(),now.getMonth()-historyMonths,1);
-const last=new Date(end.getFullYear(),end.getMonth(),1);
-const months=[];
-for(let d=new Date(first);d<=last;d.setMonth(d.getMonth()+1))months.push(monthKey(d));
-return months;
+function calculatePrediction(m,previous,weights){
+ const table=makeTable(previous);
+ const rankScores=leagueRankScores(table,m.leagueId);
+ const h=teamFeatures(table,rankScores,teamKey(m,"H"));
+ const a=teamFeatures(table,rankScores,teamKey(m,"A"));
+ const strength=f=>weights.league*f.league+weights.form*f.form+weights.trend*f.trend;
+ const hs=strength(h),as=strength(a);
+ const hd=teamAttackDefence(table,teamKey(m,"H")),ad=teamAttackDefence(table,teamKey(m,"A"));
+ // Strength affects the goal expectation, while attack/defence rates supply
+ // a second, modest signal from actual goals scored and conceded.
+ const diff=hs-as;
+ const homeLambda=clamp(1.22+diff*1.05+(hd.attack-ad.defence)*.18+.22,.25,3.2);
+ const awayLambda=clamp(1.08-diff*1.05+(ad.attack-hd.defence)*.18,.25,3.2);
+ const probs=outcomeProbabilities(homeLambda,awayLambda);
+ const prediction=Object.keys(probs).sort((x,y)=>probs[y]-probs[x])[0];
+ const coverage=clamp((Math.min(h.played,a.played)/8),0,1);
+ const sorted=Object.values(probs).sort((x,y)=>y-x);
+ const gap=sorted[0]-sorted[1];
+ const confidence=clamp(Math.round(4+gap*18+coverage*2),1,9);
+ return {probs,prediction,confidence,h,a,homeLambda,awayLambda,hs,as};
 }
-
-async function loadLeague(league,now,end,months){
-const events=[],errors=[];
-for(let i=0;i<months.length;i++){
-const url="https://site.api.espn.com/apis/site/v2/sports/soccer/"+
-encodeURIComponent(league)+"/scoreboard?dates="+months[i]+"&limit=300";
-try{
-const data=await fetchJSON(url);
-if(Array.isArray(data.events))events.push(...data.events);
-}catch(e){errors.push(months[i]+": "+e.message)}
+function defaultWeights(){return WEIGHTS[3]}
+function updatePredictions(matches){
+ const by={};
+ for(const m of matches){(by[m.leagueId]??=[]).push(m)}
+ for(const leagueId of Object.keys(by)){
+  const rows=by[leagueId].sort((a,b)=>new Date(a.date)-new Date(b.date));
+  for(let i=0;i<rows.length;i++){
+   const m=rows[i],previous=rows.slice(0,i).filter(isFinished);
+   const result=calculatePrediction(m,previous,defaultWeights());
+   Object.assign(m,result);
+  }
+ }
+ return matches;
 }
-const seen=new Set();
-const parsed=events.filter(e=>{
-if(!e?.id||seen.has(String(e.id)))return false;
-seen.add(String(e.id));return true;
-}).map(e=>parseEvent(e,league)).filter(Boolean);
-const history=parsed.filter(m=>
-m.state==="post"&&new Date(m.date)<now&&m.homeScore!==null&&m.awayScore!==null
-);
-const upcoming=parsed.filter(m=>
-m.state==="pre"&&new Date(m.date)>=now&&new Date(m.date)<=end
-);
-return {model:buildModel(history),fixtures:upcoming,errors};
+function resultString(m){return isFinished(m)?`${m.homeScore}–${m.awayScore}`:"vs"}
+function probsHtml(m){
+ if(!m.probs)return "";
+ return `<div class="probrow">${[["H","Home"],["D","Draw"],["A","Away"]].map(([k,n])=>`<div class="prob"><span>${n}</span><strong>${Math.round(m.probs[k]*100)}%</strong><div class="progress"><span style="width:${Math.round(m.probs[k]*100)}%"></span></div></div>`).join("")}</div>`;
 }
-
-async function loadFixtures(){
-if(busy)return;
-busy=true;
-$("load").disabled=true;
-$("load").textContent="Loading…";
-$("matches").innerHTML="";
-fixtures=[];
-try{
-const now=new Date();
-const end=new Date(now.getTime()+Number($("days").value)*86400000);
-const league=$("league").value;
-setStatus("Loading "+leagues[league]+" fixtures and recent results…");
-const result=await loadLeague(league,now,end,monthsFor(now,end,5));
-models[league]=result.model;
-fixtures=result.fixtures.sort((a,b)=>new Date(a.date)-new Date(b.date));
-$("matches").innerHTML=fixtures.map(m=>fixtureCard(analyse(m,result.model),true)).join("");
-if(fixtures.length){
-setStatus("Loaded "+fixtures.length+" fixtures; analysed "+result.model.matches+" completed matches.");
-if(result.errors.length)setStatus($("status").textContent+"\nSome history requests failed, so data may be incomplete.");
-}else{
-setStatus("Analysed "+result.model.matches+" completed matches, but no upcoming fixtures were found. Try a longer date range or another competition.");
+function formHtml(features){
+ if(!features?.history?.length)return `<span class="muted smalltext">No league form yet</span>`;
+ return `<div class="formchips">${features.history.map(x=>`<span class="chip ${x.result}" title="${esc(x.opponent)}">${x.result}</span>`).join("")}</div>`;
 }
-}catch(e){
-setStatus("Load failed: "+e.message+"\nYour saved tracker is unchanged. Please try again.");
-}finally{
-busy=false;
-$("load").disabled=false;
-$("load").textContent="Load fixtures & form";
+function explainHtml(m){
+ const h=m.h,a=m.a;
+ const fmt=f=>f?.history?.length?`${f.history.reduce((s,x)=>s+x.points,0)} points from ${f.history.length} recent league matches`:"insufficient league history";
+ const p=m.probs?.[m.prediction]||0;
+ return `<details><summary>Why this prediction?</summary><div class="explain">
+ <ul>
+ <li><strong>Model pick:</strong> ${outcomeName(m.prediction)} at ${Math.round(p*100)}% estimated chance.</li>
+ <li><strong>League strength:</strong> ${m.home} ${Math.round((h?.league??.5)*100)}/100; ${m.away} ${Math.round((a?.league??.5)*100)}/100. This uses the table built from earlier league results, with points per game and goal difference included.</li>
+ <li><strong>Recent form:</strong> ${m.home}: ${fmt(h)}. ${m.away}: ${fmt(a)}.</li>
+ <li><strong>Trend:</strong> recent results are compared with the earlier part of each team's last five. A short run can be noisy.</li>
+ <li><strong>Home advantage:</strong> a small home boost is included; it cannot guarantee a home win.</li>
+ <li><strong>Goal estimate:</strong> ${m.home} ${m.homeLambda.toFixed(2)}, ${m.away} ${m.awayLambda.toFixed(2)} expected goals in this simplified model.</li>
+ <li><strong>Confidence ${m.confidence}/10:</strong> a heuristic based on the probability gap and available history. It is not yet calibrated to mean that a given percentage of picks will be correct.</li>
+ </ul>
+ <div><strong>${m.home} recent form</strong>${formHtml(h)}</div>
+ <div><strong>${m.away} recent form</strong>${formHtml(a)}</div>
+ </div></details>`;
 }
+function matchCard(m){
+ const pick=outcomeName(m.prediction),id=eventId(m);
+ const inAcc=state.acc.some(x=>x.id===id);
+ return `<article class="match">
+  <div class="row between"><span class="league">${esc(m.league)}</span><span class="tag ${m.confidence>=7?"good":m.confidence<=4?"warn":""}">${m.confidence}/10 confidence</span></div>
+  <div class="meta" style="margin:7px 0">${esc(fmtDate(m.date))}${m.venue?" · "+esc(m.venue):""}</div>
+  <div class="row between"><div class="grow teamline">${esc(m.home)}<div class="meta">${m.h?.played||0} prior league matches</div></div><strong>${resultString(m)}</strong><div class="grow teamline" style="text-align:right">${esc(m.away)}<div class="meta">${m.a?.played||0} prior league matches</div></div></div>
+  ${probsHtml(m)}
+  <div class="row between wrap"><span class="tag">Pick: ${esc(pick)}</span><button class="btn small ${inAcc?"secondary":""}" onclick="addToAccumulator('${esc(id)}','${m.prediction}')">${inAcc?"Added":"Add pick"}</button></div>
+  ${explainHtml(m)}
+ </article>`;
 }
-
-function addPick(match,a,outcome){
-const index={HOME:0,DRAW:1,AWAY:2}[outcome];
-picks=picks.filter(p=>p.id!==match.id);
-picks.push({
-id:match.id,home:match.home,away:match.away,
-date:match.date,league:match.league,outcome,
-prob:a.probs[index],confidence:a.confidence
-});
-renderAccumulator();
+function upcoming(){
+ const now=Date.now(),days=Number($("days").value),league=$("league").value;
+ let list=state.matches.filter(m=>!isFinished(m)&&new Date(m.date).getTime()>=now-2*3600000&&new Date(m.date).getTime()<=now+days*86400000);
+ if(league!=="all")list=list.filter(m=>m.leagueId===league);
+ if($("sort").value==="confidence")list.sort((a,b)=>b.confidence-a.confidence);
+ else list.sort((a,b)=>new Date(a.date)-new Date(b.date));
+ return list;
 }
-
-$("matches").addEventListener("click",function(e){
-const b=e.target.closest("[data-add]");
-if(!b)return;
-const id=b.dataset.add;
-const match=fixtures.find(m=>m.id===id);
-const select=Array.from(document.querySelectorAll("[data-select]")).find(s=>s.dataset.select===id);
-if(!match||!select||!select.value){setStatus("Choose an outcome first.");return;}
-addPick(match,analyse(match,models[match.leagueId]),select.value);
-setStatus("Selection added.");
-});
-$("matches").addEventListener("change",function(e){
-const s=e.target.closest("[data-select]");
-if(s&&!s.value){
-picks=picks.filter(p=>p.id!==s.dataset.select);
-renderAccumulator();
+function renderFixtures(){
+ const list=upcoming();
+ $("fixtureStatus").textContent=state.loaded?`${list.length} upcoming fixtures · ${state.matches.filter(isFinished).length} completed results loaded`:"";
+ if(!list.length){$("fixtureList").innerHTML=`<div class="empty">${state.loaded?"No upcoming fixtures found in the loaded date window. Try All leagues or a longer window.":"Load fixtures to see predictions."}</div>`;return}
+ $("fixtureList").innerHTML=list.map(matchCard).join("");
+ if(state.topMode)renderTop10();
 }
-});
-
-async function loadTop(){
-if(topBusy)return;
-topBusy=true;
-$("loadTop").disabled=true;
-$("loadTop").textContent="Analysing leagues…";
-$("topList").innerHTML="";
-topCache=[];
-try{
-const now=new Date();
-const end=new Date(now.getTime()+7*86400000);
-const months=monthsFor(now,end,5);
-const all=[],failures=[];
-for(let i=0;i<leagueIds.length;i++){
-const league=leagueIds[i];
-setTopStatus("Checking "+leagues[league]+" ("+(i+1)+" of "+leagueIds.length+")…");
-try{
-const result=await loadLeague(league,now,end,months);
-models[league]=result.model;
-result.fixtures.forEach(m=>all.push(analyse(m,result.model)));
-if(result.errors.length)failures.push(leagues[league]);
-}catch(e){failures.push(leagues[league]);}
+function renderTop10(){
+ const all=upcoming().filter(m=>m.confidence>=1);
+ all.sort((a,b)=>(b.probs[b.prediction]-a.probs[a.prediction])-(a.probs[a.prediction]-b.probs[b.prediction]));
+ const picks=all.slice(0,10);
+ $("topbox").innerHTML=`<h2>Top 10 picks across leagues</h2><p class="muted smalltext">Ranked by the leading outcome's probability, with a preference for clearer separation from alternatives. These are estimates, not guaranteed or necessarily low-risk picks.</p>`+picks.map((m,i)=>`<div class="pick"><div class="row between"><strong>${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong><span class="tag">${Math.round(m.probs[m.prediction]*100)}%</span></div><div class="meta">${esc(m.league)} · ${esc(fmtDate(m.date))}</div><p style="margin:7px 0 0">Pick: <strong>${esc(outcomeName(m.prediction))}</strong></p><button class="btn small" onclick="addToAccumulator('${esc(eventId(m))}','${m.prediction}')">Add to accumulator</button></div>`).join("")||`<div class="empty">No upcoming matches with predictions available.</div>`;
 }
-topCache=all.filter(a=>a.dataMatches>=3)
-.sort((a,b)=>(b.probability+(b.confidence-5)*.7)-(a.probability+(a.confidence-5)*.7))
-.slice(0,10);
-
-if(!topCache.length){
-$("topList").innerHTML="<p>No upcoming fixtures with enough history were found. Try again later.</p>";
-setTopStatus("No suitable fixtures were found.");
-}else{
-$("topList").innerHTML=topCache.map((a,i)=>`
-<div class="panel">
-<div class="badge">PICK #${i+1} · ${esc(a.match.league)}</div>
-<p class="muted">${esc(formatDate(a.match.date))}</p>
-<strong>${esc(a.match.home)} vs ${esc(a.match.away)}</strong>
-<p>Suggested: <strong>${esc(a.outcome==="HOME"?a.match.home:a.outcome==="AWAY"?a.match.away:"Draw")}</strong></p>
-<p>Estimated probability: <strong>${a.probability}%</strong> · Confidence: <strong>${a.confidence}/10</strong></p>
-${whyHTML(a)}
-<button class="primary" data-topadd="${esc(a.match.id)}" style="width:100%">Add suggested pick</button>
-</div>`).join("");
-setTopStatus("Ranked "+all.length+" upcoming fixtures across supported leagues."+
-(failures.length?" Some leagues could not be loaded: "+failures.join(", ")+".":""));
-}
-}catch(e){
-setTopStatus("Could not build Top 10: "+e.message);
-}finally{
-topBusy=false;
-$("loadTop").disabled=false;
-$("loadTop").textContent="Find top 10 picks";
-}
-}
-$("loadTop").addEventListener("click",loadTop);
-
-$("topList").addEventListener("click",function(e){
-const b=e.target.closest("[data-topadd]");
-if(!b)return;
-const a=topCache.find(item=>item.match.id===b.dataset.topadd);
-if(!a){setTopStatus("Please refresh Top 10 and try again.");return;}
-addPick(a.match,a,a.outcome);
-setTopStatus("Suggested pick added to accumulator.");
-});
-
 function renderAccumulator(){
-$("count").textContent=picks.length;
-$("accList").innerHTML=picks.length?picks.map((p,i)=>`
-<div class="panel">
-<strong>${i+1}. ${esc(p.home)} vs ${esc(p.away)}</strong>
-<p>${esc(p.league||"Fixture")} · ${esc(p.outcome)} · estimated ${esc(p.prob)}% · confidence ${esc(p.confidence)}/10</p>
-<button data-remove="${esc(p.id)}">Remove</button>
-</div>`).join(""):"No selections yet.";
+ $("accCount").textContent=state.acc.length?`(${state.acc.length})`:"";
+ $("accTotal").textContent=state.acc.length;
+ const combined=state.acc.reduce((p,x)=>p*(Number(x.prob)||0),1);
+ $("accProb").textContent=state.acc.length?`${(combined*100).toFixed(2)}%`:"—";
+ if(!state.acc.length){$("accList").innerHTML=`<div class="empty">Your accumulator is empty. Add picks from Fixtures.</div>`;return}
+ $("accList").innerHTML=state.acc.map((x,i)=>`<div class="pick"><div class="row between"><div class="grow"><strong>${esc(x.home)} vs ${esc(x.away)}</strong><div class="meta">${esc(x.league)} · ${esc(fmtDate(x.date))}</div><div>Pick: <strong>${esc(outcomeName(x.outcome))}</strong> · ${Math.round(x.prob*100)}%</div></div><button class="btn danger small" onclick="removeAcc(${i})">Remove</button></div></div>`).join("");
 }
-$("accList").addEventListener("click",function(e){
-const b=e.target.closest("[data-remove]");
-if(!b)return;
-picks=picks.filter(p=>p.id!==b.dataset.remove);
-renderAccumulator();
-});
-$("save").addEventListener("click",function(){
-if(!picks.length){setStatus("Add at least one selection first.");return;}
-tracker.unshift({
-id:String(Date.now()),created:new Date().toISOString(),
-picks:picks.map(p=>({...p})),result:"Pending"
-});
-saveStorage();
-renderTracker();
-setStatus("Accumulator saved to tracker.");
-});
-$("clearAcc").addEventListener("click",function(){
-picks=[];
-renderAccumulator();
-});
-
+function addToAccumulator(id,outcome){
+ const m=state.matches.find(x=>eventId(x)===id);
+ if(!m||!m.probs)return;
+ if(state.acc.some(x=>x.id===id)){alert("That match is already in your accumulator.");return}
+ state.acc.push({id,home:m.home,away:m.away,league:m.league,leagueId:m.leagueId,date:m.date,outcome,prob:m.probs[outcome]});
+ store("fp_acc",state.acc);renderAccumulator();renderFixtures();
+}
+function removeAcc(i){state.acc.splice(i,1);store("fp_acc",state.acc);renderAccumulator();renderFixtures()}
+function saveAccumulator(){
+ if(!state.acc.length){alert("Add at least one pick first.");return}
+ state.tracker.unshift({id:"acc_"+Date.now(),created:new Date().toISOString(),type:"Accumulator",picks:state.acc.map(x=>({...x})),status:"pending"});
+ store("fp_tracker",state.tracker);renderTracker();alert("Accumulator saved to Tracker.");
+}
 function renderTracker(){
-$("trackList").innerHTML=tracker.length?tracker.map(item=>`
-<div class="panel">
-<strong>Accumulator · ${esc(formatDate(item.created))}</strong>
-<p>${item.picks.map(p=>esc(p.home)+" vs "+esc(p.away)+" — "+esc(p.outcome)+" ("+esc(p.prob)+"%, confidence "+esc(p.confidence)+"/10)").join("<br>")}</p>
-<label for="result-${esc(item.id)}">Result</label>
-<select id="result-${esc(item.id)}" data-result="${esc(item.id)}">
-${["Pending","Won","Lost","Void"].map(r=>`<option ${item.result===r?"selected":""}>${r}</option>`).join("")}
-</select>
-</div>`).join(""):"No saved picks yet.";
+ const settled=state.tracker.filter(x=>x.status==="won"||x.status==="lost");
+ const won=settled.filter(x=>x.status==="won").length;
+ $("trackerStats").innerHTML=`<div class="statgrid"><div class="stat"><span class="muted smalltext">Saved records</span><strong>${state.tracker.length}</strong></div><div class="stat"><span class="muted smalltext">Settled records</span><strong>${settled.length}</strong></div><div class="stat"><span class="muted smalltext">Won records</span><strong>${won}</strong></div><div class="stat"><span class="muted smalltext">Success rate</span><strong>${settled.length?(won/settled.length*100).toFixed(1)+"%":"—"}</strong></div></div>`;
+ if(!state.tracker.length){$("trackerList").innerHTML=`<div class="empty">Nothing saved yet. Add selections to the accumulator and save them here.</div>`;return}
+ $("trackerList").innerHTML=state.tracker.map((x,i)=>`<div class="pick"><div class="row between"><strong>${esc(x.type||"Pick")}</strong><span class="tag">${esc(x.status||"pending")}</span></div><div class="meta">${esc(fmtDate(x.created))}</div>${(x.picks||[]).map(p=>`<p style="margin:8px 0"><strong>${esc(p.home)} vs ${esc(p.away)}</strong><br><span class="muted">${esc(p.league)} · ${esc(outcomeName(p.outcome))}</span>${p.actual?`<br>Actual: ${esc(p.actual)}`:""}</p>`).join("")}<button class="btn danger small" onclick="removeTracker(${i})">Delete record</button></div>`).join("");
 }
-$("trackList").addEventListener("change",function(e){
-const s=e.target.closest("[data-result]");
-if(!s)return;
-const item=tracker.find(t=>t.id===s.dataset.result);
-if(!item)return;
-item.result=s.value;
-saveStorage();
-renderTracker();
-});
-$("clearTrack").addEventListener("click",function(){
-if(!confirm("Delete all tracked picks?"))return;
-tracker=[];
-saveStorage();
-renderTracker();
-});
-
-$("load").addEventListener("click",loadFixtures);
-$("league").addEventListener("change",function(){
-fixtures=[];
-$("matches").innerHTML="";
-});
-$("days").addEventListener("change",function(){
-fixtures=[];
-$("matches").innerHTML="";
-});
-
-renderAccumulator();
-renderTracker();
-})();
+function removeTracker(i){state.tracker.splice(i,1);store("fp_tracker",state.tracker);renderTracker()}
+async function refreshTracker(){
+ if(!state.tracker.length)return;
+ const finished=new Map(state.matches.filter(isFinished).map(m=>[eventId(m),m]));
+ for(const record of state.tracker){
+  let allDone=true,allWon=true,anyLost=false;
+  for(const p of record.picks||[]){
+   const m=finished.get(p.id);
+   if(!m){allDone=false;continue}
+   const actual=getOutcome(m.homeScore,m.awayScore);
+   p.actual=`${m.homeScore}–${m.awayScore}`;
+   p.result=actual===p.outcome?"won":"lost";
+   if(p.result==="lost")anyLost=true;
+   if(p.result!=="won")allWon=false;
+  }
+  if(allDone)record.status=anyLost?"lost":allWon?"won":"lost";
+ }
+ store("fp_tracker",state.tracker);renderTracker();
+}
+function runBacktest(allMatches){
+ const results=WEIGHTS.map(w=>({name:w.name,correct:0,total:0,homeBaseline:0,homeCorrect:0,drawPred:0,drawCorrect:0,awayPred:0,awayCorrect:0,byLeague:{}}));
+ const chronological=allMatches.filter(isFinished).slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
+ const historyByLeague={};
+ // Walk forward chronologically: a match's score is not added until after
+ // its prediction has been made.
+ for(const m of chronological){
+  const hist=historyByLeague[m.leagueId]||[];
+  const prior=hist.filter(isFinished);
+  const ht=makeTable(prior);
+  const homeN=ht[teamKey(m,"H")]?.played||0;
+  const awayN=ht[teamKey(m,"A")]?.played||0;
+  // Avoid judging models on teams with no meaningful prior league history.
+  if(homeN>=3&&awayN>=3){
+   for(let i=0;i<WEIGHTS.length;i++){
+    const r=results[i],pred=calculatePrediction(m,prior,WEIGHTS[i]);
+    const actual=getOutcome(m.homeScore,m.awayScore);
+    r.total++;if(pred.prediction===actual)r.correct++;
+    r.homeBaseline++;if(actual==="H")r.homeCorrect++;
+    if(pred.prediction==="D"){r.drawPred++;if(actual==="D")r.drawCorrect++}
+    if(pred.prediction==="A"){r.awayPred++;if(actual==="A")r.awayCorrect++}
+    r.byLeague[m.leagueId]??={correct:0,total:0};
+    r.byLeague[m.leagueId].total++;
+    if(pred.prediction===actual)r.byLeague[m.leagueId].correct++;
+   }
+  }
+  (historyByLeague[m.leagueId]??=[]).push(m);
+ }
+ const baseline=results[0]?.homeCorrect||0;
+ const baselineTotal=results[0]?.homeBaseline||0;
+ return {results,matchCount:chronological.length,baseline,baselineTotal,coverage:allMatches.length};
+}
+function renderTest(test){
+ if(!test.results.some(r=>r.total)){
+  $("testResults").innerHTML=`<div class="notice error">Not enough historical matches with usable pre-match data to score the candidates. Try again later or use a longer archive. No accuracy figure has been inferred.</div>`;
+  return;
+ }
+ const ranked=test.results.slice().sort((a,b)=>b.correct/Math.max(1,b.total)-a.correct/Math.max(1,a.total));
+ const best=ranked[0];
+ $("testResults").innerHTML=`<div class="panel"><div class="row between"><div><div class="muted smalltext">Best observed in this sample</div><h3>${esc(best.name)}</h3></div><div style="text-align:right"><strong style="font-size:27px">${(best.correct/best.total*100).toFixed(1)}%</strong><div class="muted smalltext">${best.correct}/${best.total} correct</div></div></div><p class="muted smalltext">This is the best observed candidate in this test sample, not a guarantee that it will be best on future matches. Use more matchweeks to reduce chance variation.</p></div>
+ <div class="tablewrap panel"><table><thead><tr><th>Model</th><th>Correct</th><th>Accuracy</th><th>Draw picks correct</th><th>Away picks correct</th></tr></thead><tbody>
+ ${ranked.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.correct}/${r.total}</td><td>${(r.correct/r.total*100).toFixed(1)}%</td><td>${r.drawCorrect}/${r.drawPred||0}</td><td>${r.awayCorrect}/${r.awayPred||0}</td></tr>`).join("")}
+ </tbody></table></div>
+ <div class="panel"><h3>Home-win baseline</h3><p>Predict home win for every eligible match: <strong>${test.baseline}/${test.baselineTotal} (${test.baselineTotal?(test.baseline/test.baselineTotal*100).toFixed(1):"0"}%)</strong>.</p><p class="muted smalltext">This baseline is deliberately simple. It does not predict draws or away wins.</p></div>
+ <h3>Accuracy by league — ${esc(best.name)}</h3><div class="tablewrap panel"><table><thead><tr><th>League</th><th>Correct</th><th>Accuracy</th></tr></thead><tbody>
+ ${Object.entries(best.byLeague).map(([id,v])=>`<tr><td>${esc(LEAGUES[id]||id)}</td><td>${v.correct}/${v.total}</td><td>${(v.correct/v.total*100).toFixed(1)}%</td></tr>`).join("")}
+ </tbody></table></div>
+ <p class="muted smalltext">Matches in archive: ${test.coverage}. Completed matches considered: ${test.matchCount}. Only matches with at least three earlier league results for each team are scored. Model ranking is based on raw accuracy, which treats a correct draw and a correct favourite win equally.</p>`;
+}
+async function loadData(){
+ if(state.loading)return;
+ state.loading=true;$("load").disabled=true;$("runTest").disabled=true;
+ $("connection").textContent="Loading";$("fixtureStatus").textContent="Loading monthly scoreboards…";
+ $("fixtureList").innerHTML=`<div class="empty">Loading match data. This can take a little while.</div>`;
+ try{
+  const result=await fetchAllLeagues(6);
+  state.matches=updatePredictions(result.matches);
+  state.byLeague={};for(const m of state.matches)(state.byLeague[m.leagueId]??=[]).push(m);
+  state.loaded=true;
+  $("connection").textContent=state.matches.length?"Data loaded":"No data";
+  $("fixtureStatus").textContent=`Loaded ${state.matches.length} matches across ${Object.keys(state.byLeague).length} competitions.${result.errors.length?" Some competitions or months were unavailable: "+result.errors.join(", ")+".":""}`;
+  renderFixtures();renderAccumulator();renderTracker();await refreshTracker();
+  if(state.lastTest)renderTest(state.lastTest);
+ }catch(e){
+  $("connection").textContent="Error";
+  $("fixtureList").innerHTML=`<div class="empty error">Couldn't load football data. Check your connection and try again. ${esc(e.message)}</div>`;
+ }finally{state.loading=false;$("load").disabled=false;$("runTest").disabled=false}
+}
+async function doTest(){
+ $("runTest").disabled=true;
+ $("testStatus").textContent="Loading historical match data and running the chronological test…";
+ $("testResults").innerHTML="";
+ try{
+  // Fetch a longer window for the test than the fixture display uses.
+  const result=await fetchAllLeagues(12);
+  if(!result.matches.length)throw new Error("The data source returned no matches.");
+  const test=runBacktest(result.matches);
+  state.lastTest=test;
+  $("testStatus").textContent=`Test completed on ${result.matches.length} retrieved matches. ${result.errors.length?`Unavailable competitions: ${result.errors.join(", ")}.`:"All requested competitions returned data."}`;
+  renderTest(test);
+ }catch(e){
+  $("testStatus").innerHTML=`<span class="error">Test could not be completed: ${esc(e.message)}. No result has been guessed.</span>`;
+ }finally{$("runTest").disabled=false}
+}
+function showTab(tab){
+ document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
+ ["fixtures","accumulator","tracker","test"].forEach(id=>$(id).hidden=id!==tab);
+ if(tab==="accumulator")renderAccumulator();
+ if(tab==="tracker")renderTracker();
+ if(tab==="fixtures")renderFixtures();
+}
+document.querySelectorAll("nav button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
+$("load").addEventListener("click",loadData);
+$("league").addEventListener("change",renderFixtures);
+$("days").addEventListener("change",renderFixtures);
+$("sort").addEventListener("change",renderFixtures);
+$("top10").addEventListener("click",()=>{state.topMode=!state.topMode;$("top10").textContent=state.topMode?"Hide Top 10 picks":"Show Top 10 picks";if(state.topMode)renderTop10();else $("topbox").innerHTML="";});
+$("clearAcc").addEventListener("click",()=>{if(confirm("Clear all accumulator selections?")){state.acc=[];store("fp_acc",state.acc);renderAccumulator();renderFixtures()}});
+$("saveAcc").addEventListener("click",saveAccumulator);
+$("refreshTracker").addEventListener("click",async()=>{if(!state.loaded)await loadData();await refreshTracker()});
+$("clearTracker").addEventListener("click",()=>{if(confirm("Delete all tracker records?")){state.tracker=[];store("fp_tracker",state.tracker);renderTracker()}});
+$("runTest").addEventListener("click",doTest);
+window.addToAccumulator=addToAccumulator;
+window.removeAcc=removeAcc;
+window.removeTracker=removeTracker;
+renderAccumulator();renderTracker();
 </script>
 </body>
 </html>
