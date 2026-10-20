@@ -78,7 +78,7 @@ details{margin-top:10px;border-top:1px solid var(--border);padding-top:9px}summa
 <div><label for="sort">Sort by</label><select id="sort"><option value="date">Kick-off date</option><option value="confidence">Confidence</option></select></div>
 </div>
 <div class="row wrap" style="margin-bottom:12px"><button class="btn" id="load">Load / refresh predictions</button><button class="btn secondary" id="top10">Show Top 10 picks</button></div>
-<div class="notice">Predictions use earlier completed league results. Expected goals are averages, not exact-score guarantees. Probabilities are estimates, not betting advice.</div>
+<div class="notice">Predictions use earlier completed league results. Expected goals are averages, not exact-score guarantees. Displayed scores are rounded estimates adjusted to agree with the predicted result. Probabilities are estimates, not betting advice.</div>
 <div id="topbox"></div><div id="fixtureStatus" class="muted smalltext"></div><div id="fixtureList"><div class="empty">Tap “Load / refresh predictions” to begin.</div></div>
 </section>
 
@@ -170,7 +170,6 @@ function leagueAverages(previous){
 function windowStats(hist,n,leagueAvg){
  const rows=hist.slice(-n),count=rows.length;
  if(!count)return{attack:leagueAvg.all,defence:leagueAvg.all,ppg:1.25,gd:0,count:0,history:[]};
- // Shrink small samples towards league averages to avoid overreacting to one or two matches.
  const rawAttack=avg(rows,x=>x.gf,leagueAvg.all),rawDefence=avg(rows,x=>x.ga,leagueAvg.all),shrink=count/(count+5);
  return{attack:leagueAvg.all+(rawAttack-leagueAvg.all)*shrink,defence:leagueAvg.all+(rawDefence-leagueAvg.all)*shrink,
  ppg:avg(rows,x=>x.points,1.25),gd:avg(rows,x=>x.gf-x.ga,0),count,history:rows};
@@ -193,10 +192,32 @@ function scoreDistribution(homeLambda,awayLambda,maxGoals=10){
  const norm=total||1;
  return{probs:{H:H/norm,D:D/norm,A:A/norm},mostLikelyScore:best.score,scoreProbability:best.prob/norm};
 }
+
+/*
+ * Convert expected goals to a readable score, then enforce consistency
+ * with the model's predicted outcome using the smallest score adjustment.
+ * This changes display only; the underlying goal estimates and probabilities
+ * remain untouched.
+ */
+function consistentPredictedScore(homeLambda,awayLambda,prediction){
+ let homeGoals=Math.max(0,Math.round(homeLambda));
+ let awayGoals=Math.max(0,Math.round(awayLambda));
+
+ if(prediction==="H"&&homeGoals<=awayGoals){
+  homeGoals=awayGoals+1;
+ }else if(prediction==="A"&&awayGoals<=homeGoals){
+  awayGoals=homeGoals+1;
+ }else if(prediction==="D"&&homeGoals!==awayGoals){
+  if(homeGoals>awayGoals)homeGoals=awayGoals;
+  else awayGoals=homeGoals;
+ }
+
+ return `${homeGoals}–${awayGoals}`;
+}
+
 function calculatePrediction(m,previous,model){
  const homeHist=historyForTeam(previous,teamKey(m,"H")),awayHist=historyForTeam(previous,teamKey(m,"A")),la=leagueAverages(previous);
  const h=blendedStats(homeHist,model,la),a=blendedStats(awayHist,model,la);
- // Relative attack and defensive weakness, shrunk towards the league average.
  const homeAttack=h.attack/Math.max(.5,la.all),awayAttack=a.attack/Math.max(.5,la.all);
  const homeDefence=h.defence/Math.max(.5,la.all),awayDefence=a.defence/Math.max(.5,la.all);
  const leagueHome=clamp(la.home,1.05,1.9),leagueAway=clamp(la.away,.75,1.5);
@@ -204,9 +225,10 @@ function calculatePrediction(m,previous,model){
  const al=clamp(leagueAway*awayAttack*homeDefence,.15,4.2);
  const dist=scoreDistribution(hl,al),probs=dist.probs;
  const prediction=["H","D","A"].sort((x,y)=>probs[y]-probs[x])[0];
+ const predictedScore=consistentPredictedScore(hl,al,prediction);
  const sorted=Object.values(probs).sort((x,y)=>y-x),coverage=clamp(Math.min(h.count,a.count)/10,0,1);
  const confidence=clamp(Math.round(3+(sorted[0]-sorted[1])*16+coverage*2),1,9);
- return{probs,prediction,confidence,h,a,homeLambda:hl,awayLambda:al,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability};
+ return{probs,prediction,confidence,h,a,homeLambda:hl,awayLambda:al,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore};
 }
 function updatePredictions(matches,index=state.activeIndex){
  const by={};for(const m of matches)(by[m.leagueId]??=[]).push(m);
@@ -220,8 +242,9 @@ function explainHtml(m){
  const fmt=f=>f.history.length?`${f.history.reduce((s,x)=>s+x.points,0)} points from the last ${f.history.length} league matches`:"not enough league history";
  return`<details><summary>Why this prediction?</summary><div class="explain"><ul>
  <li><strong>Model pick:</strong> ${outcomeName(m.prediction)} (${Math.round(m.probs[m.prediction]*100)}%).</li>
- <li><strong>Expected goals:</strong> ${esc(m.home)} ${m.homeLambda.toFixed(2)}; ${esc(m.away)} ${m.awayLambda.toFixed(2)}.</li>
- <li><strong>Most likely exact score:</strong> ${m.mostLikelyScore} (${(m.scoreProbability*100).toFixed(1)}%). This is one possible scoreline, not the probability of the match outcome.</li>
+ <li><strong>Displayed predicted score:</strong> ${esc(m.home)} ${m.predictedScore} ${esc(m.away)}. The rounded score is adjusted only if necessary to agree with the predicted result.</li>
+ <li><strong>Expected goals:</strong> ${esc(m.home)} ${m.homeLambda.toFixed(2)}; ${esc(m.away)} ${m.awayLambda.toFixed(2)}. These decimal estimates are not changed by the display adjustment.</li>
+ <li><strong>Most probable exact score from the goal distribution:</strong> ${m.mostLikelyScore} (${(m.scoreProbability*100).toFixed(1)}%). This is the single most likely scoreline before the consistency adjustment; it can differ from the displayed predicted score.</li>
  <li><strong>Recent form:</strong> ${esc(m.home)} — ${fmt(m.h)}; ${esc(m.away)} — ${fmt(m.a)}.</li>
  <li><strong>Goal model:</strong> attack and goals conceded over the last 15, 10 and 5 matches, blended by the selected model and shrunk towards league averages when samples are small.</li>
  <li><strong>Confidence ${m.confidence}/10:</strong> a simple indicator of how separated the leading outcome is from the alternatives, not a calibrated guarantee.</li></ul>
@@ -229,10 +252,11 @@ function explainHtml(m){
 }
 function matchCard(m){
  const id=eventId(m),added=state.acc.some(x=>x.id===id);
+ const shownScore=isFinished(m)?resultString(m):m.predictedScore;
  return`<article class="match"><div class="row between"><span class="league">${esc(m.league)}</span><span class="tag ${m.confidence>=7?"good":m.confidence<=4?"warn":""}">${m.confidence}/10 confidence</span></div>
  <div class="meta" style="margin:7px 0">${esc(fmtDate(m.date))}${m.venue?" · "+esc(m.venue):""}</div>
- <div class="row between"><div class="grow teamline">${esc(m.home)}<div class="meta">${m.h.count} prior league matches</div></div><strong>${resultString(m)}</strong><div class="grow teamline" style="text-align:right">${esc(m.away)}<div class="meta">${m.a.count} prior league matches</div></div></div>
- ${probsHtml(m)}<div class="row between wrap"><span class="tag">Pick: ${outcomeName(m.prediction)}</span><span class="tag">Likeliest score: ${m.mostLikelyScore}</span><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(id)}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>${explainHtml(m)}</article>`;
+ <div class="row between"><div class="grow teamline">${esc(m.home)}<div class="meta">${m.h.count} prior league matches</div></div><strong style="white-space:nowrap;font-size:19px">${shownScore}</strong><div class="grow teamline" style="text-align:right">${esc(m.away)}<div class="meta">${m.a.count} prior league matches</div></div></div>
+ ${probsHtml(m)}<div class="row between wrap"><span class="tag">Pick: ${outcomeName(m.prediction)}</span><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(id)}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>${explainHtml(m)}</article>`;
 }
 function upcoming(){
  const now=new Date(),v=$("days").value,league=$("league").value;
@@ -250,7 +274,7 @@ function renderTop10(){
  const all=upcoming().sort((a,b)=>b.probs[b.prediction]-a.probs[a.prediction]).slice(0,10);
  $("topbox").innerHTML=`<h2>Top 10 picks</h2><p class="muted smalltext">Ranked by the probability of the model's leading outcome. Higher probability does not mean a guaranteed result.</p>`+all.map((m,i)=>{
  const added=state.acc.some(x=>x.id===eventId(m));
- return`<div class="pick"><strong>${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong><div class="meta">${esc(m.league)} · ${esc(fmtDate(m.date))}</div><p>Pick: ${outcomeName(m.prediction)} · ${Math.round(m.probs[m.prediction]*100)}% · Likeliest score ${m.mostLikelyScore}</p><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(eventId(m))}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>`;
+ return`<div class="pick"><strong>${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong><div class="meta">${esc(m.league)} · ${esc(fmtDate(m.date))}</div><p>Pick: ${outcomeName(m.prediction)} · Predicted score: ${m.predictedScore} · ${Math.round(m.probs[m.prediction]*100)}% probability</p><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(eventId(m))}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>`;
  }).join("")||`<div class="empty">No upcoming matches found.</div>`;
 }
 function renderAccumulator(){
@@ -266,7 +290,7 @@ function removeAcc(i){state.acc.splice(i,1);store("fp_acc",state.acc);renderAccu
 function snapshotPredictions(matches){
  const now=Date.now();let added=0;
  for(const m of matches){if(new Date(m.date).getTime()<now-2*3600000||!m.probs)continue;const id=eventId(m);if(state.history.some(x=>x.id===id))continue;
- state.history.push({id,leagueId:m.leagueId,league:m.league,home:m.home,away:m.away,date:m.date,prediction:m.prediction,probs:{...m.probs},modelIndex:state.activeIndex,savedAt:new Date().toISOString()});added++}
+ state.history.push({id,leagueId:m.leagueId,league:m.league,home:m.home,away:m.away,date:m.date,prediction:m.prediction,probs:{...m.probs},predictedScore:m.predictedScore,modelIndex:state.activeIndex,savedAt:new Date().toISOString()});added++}
  state.history=state.history.filter(x=>Date.now()-new Date(x.date).getTime()<45*86400000).slice(-1500);store("fp_prediction_history",state.history);return added;
 }
 function renderHistory(){
@@ -278,7 +302,7 @@ function renderHistory(){
  $("historyList").innerHTML=list.map(x=>{
  const done=!!x.actualOutcome,ok=done&&x.actualOutcome===x.prediction,score=x.actualScore||"Result pending",prob=k=>Math.round((x.probs[k]||0)*100);
  const reason=!done?"Waiting for the final result.":ok?"The model's most likely outcome happened.":`The model favoured ${outcomeName(x.prediction)} (${prob(x.prediction)}%), but ${outcomeName(x.actualOutcome).toLowerCase()} happened.`;
- return`<article class="match"><div class="row between"><span class="league">${esc(x.league)}</span><span class="tag ${!done?"":ok?"good":"bad"}">${!done?"Pending":ok?"Correct":"Incorrect"}</span></div><div class="meta">${esc(fmtDate(x.date))} · Model ${MODELS[x.modelIndex]?.short||"?"}</div><div class="row between" style="margin-top:7px"><strong class="grow">${esc(x.home)}</strong><strong>${esc(score)}</strong><strong class="grow" style="text-align:right">${esc(x.away)}</strong></div><div class="probrow">${[["H","Home"],["D","Draw"],["A","Away"]].map(([k,n])=>`<div class="prob"><span>${n}</span><strong>${prob(k)}%</strong></div>`).join("")}</div><div class="notice"><strong>${done?(ok?"Why it was correct":"Why it was wrong"):"What the model expected"}</strong><br>${esc(reason)}</div></article>`;
+ return`<article class="match"><div class="row between"><span class="league">${esc(x.league)}</span><span class="tag ${!done?"":ok?"good":"bad"}">${!done?"Pending":ok?"Correct":"Incorrect"}</span></div><div class="meta">${esc(fmtDate(x.date))} · Model ${MODELS[x.modelIndex]?.short||"?"}</div><div class="row between" style="margin-top:7px"><strong class="grow">${esc(x.home)}</strong><strong>${esc(score)}</strong><strong class="grow" style="text-align:right">${esc(x.away)}</strong></div>${x.predictedScore?`<div class="meta" style="margin-top:5px">Saved predicted score: ${esc(x.predictedScore)}</div>`:""}<div class="probrow">${[["H","Home"],["D","Draw"],["A","Away"]].map(([k,n])=>`<div class="prob"><span>${n}</span><strong>${prob(k)}%</strong></div>`).join("")}</div><div class="notice"><strong>${done?(ok?"Why it was correct":"Why it was wrong"):"What the model expected"}</strong><br>${esc(reason)}</div></article>`;
  }).join("");
 }
 async function refreshHistoryScores(){await loadData()}
@@ -290,13 +314,11 @@ function runBacktest(all){
  const models=MODELS.map(model=>({name:model.name,short:model.short,total:0,correct:0,brier:0,logLoss:0,actual:{H:0,D:0,A:0},predicted:{H:0,D:0,A:0},classCorrect:{H:0,D:0,A:0},byLeague:{}}));
  const chron=all.filter(isFinished).slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
  const history={},eligible=[];
- // First build a chronological set of eligible matches, using only the matches before each target.
  for(const m of chron){
   const prior=history[m.leagueId]||[],h=historyForTeam(prior,teamKey(m,"H")),a=historyForTeam(prior,teamKey(m,"A"));
   if(h.length>=3&&a.length>=3)eligible.push({m,prior:prior.slice()});
   (history[m.leagueId]??=[]).push(m);
  }
- // Evaluate the later 30% as a holdout; the earliest 70% is warm-up only.
  const start=Math.floor(eligible.length*.70),testRows=eligible.slice(start);
  for(const row of testRows){
   const m=row.m,actual=getOutcome(m.homeScore,m.awayScore);
@@ -338,7 +360,7 @@ function saveSettings(){
  store("fp_settings",{mode:state.mode,manualIndex:state.manualIndex,minSample:state.minSample});
  if(state.mode==="manual"){state.activeIndex=state.manualIndex;if(state.matches.length){updatePredictions(state.matches,state.activeIndex);snapshotPredictions(state.matches);renderFixtures()}}
  else if(state.lastTest){const b=bestTestModel(state.lastTest);state.activeIndex=b?MODELS.findIndex(m=>m.short===b.short):state.manualIndex;if(state.matches.length){updatePredictions(state.matches,state.activeIndex);renderFixtures()}}
- updateModelBanner();$("settingsStatus").textContent=state.mode==="auto"?"Settings saved. Auto will use the best eligible Brier score on the next test.":"Manual model saved.";
+ updateModelBanner();$("settingsStatus").textContent=state.mode==="auto"?"Settings saved. Auto will use the best eligible Brier score on the next test.":"Settings saved. Displayed predicted scores will now be consistent with the selected model's predicted result.";
 }
 function setBusy(title,percent){$("busy").classList.add("show");$("busyTitle").textContent=title;$("busyBar").style.width=percent+"%";$("busyPercent").textContent=percent+"%"}
 function hideBusy(){$("busy").classList.remove("show")}
