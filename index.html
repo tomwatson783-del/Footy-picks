@@ -10,9 +10,9 @@
 *{box-sizing:border-box}
 body{margin:0;background:#101827;color:#f4f7fb;font:16px -apple-system,BlinkMacSystemFont,Arial,sans-serif}
 header{background:#19273a;padding:20px 16px}
-h1{margin:0;font-size:27px}h2{font-size:20px}
+h1{margin:0;font-size:27px}
 main{max-width:760px;margin:auto;padding:14px}
-nav{display:flex;gap:7px;overflow:auto;margin:8px 0 16px}
+nav{display:flex;gap:7px;overflow:auto;margin:12px 0}
 button,select{font:inherit;border-radius:10px;padding:12px;border:1px solid #43536b}
 button{background:#293951;color:white;cursor:pointer}
 button.primary,nav button.active{background:#65e6a0;color:#10251b;border:0;font-weight:700}
@@ -20,8 +20,6 @@ select{background:#111d2e;color:white;width:100%;margin:5px 0 12px}
 label{display:block;color:#a8b6c9;font-size:14px}
 .panel,.match{background:#1c293b;border-radius:14px;padding:15px;margin:12px 0}
 .muted,small{color:#a8b6c9}
-.row{display:flex;gap:10px;align-items:center}
-.row>*{flex:1;min-width:0}
 .probs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}
 .prob{background:#111d2e;border-radius:9px;text-align:center;padding:10px 3px}
 .prob strong{display:block;color:#65e6a0;font-size:21px}
@@ -34,7 +32,7 @@ footer{font-size:12px;color:#a8b6c9;padding:20px 0}
 <body>
 <header>
 <h1>⚽ Footy Picks</h1>
-<div class="muted">Fixtures · 1X2 predictions · Accumulators · Tracker</div>
+<p class="muted">Fixtures · Predictions · Accumulators · Tracker</p>
 </header>
 <main>
 <nav>
@@ -61,8 +59,8 @@ footer{font-size:12px;color:#a8b6c9;padding:20px 0}
 <option value="14" selected>14 days</option>
 <option value="30">30 days</option>
 </select>
-<button class="primary" id="load" style="width:100%">Load fixtures</button>
-<p id="status" role="status" class="muted">Ready. Tap Load fixtures to begin. No API token required.</p>
+<button id="load" class="primary" style="width:100%">Load fixtures</button>
+<p id="status" class="muted" role="status">Ready. Tap Load fixtures. No API token required.</p>
 </div>
 <div id="matches"></div>
 </section>
@@ -70,7 +68,7 @@ footer{font-size:12px;color:#a8b6c9;padding:20px 0}
 <section id="acc" hidden>
 <div class="panel">
 <h2>Accumulator</h2>
-<p class="muted">Choose an outcome for each match in Fixtures.</p>
+<p class="muted">Select an outcome for a fixture before adding it.</p>
 <div id="accList">No selections yet.</div>
 <button id="save" class="primary" style="width:100%">Save to tracker</button>
 <button id="clearAcc" style="width:100%;margin-top:8px">Clear selections</button>
@@ -80,15 +78,13 @@ footer{font-size:12px;color:#a8b6c9;padding:20px 0}
 <section id="tracker" hidden>
 <div class="panel">
 <h2>Pick tracker</h2>
-<p class="muted">Saved locally on this device. Update results when matches finish.</p>
+<p class="muted">Saved on this device.</p>
 <div id="trackList">No saved picks yet.</div>
 <button id="clearTrack" style="width:100%;margin-top:12px">Clear tracker</button>
 </div>
 </section>
-
-<footer>Predictions are rough estimates, not a trained model or betting advice. Fixtures require an internet connection. Never stake money you cannot afford to lose.</footer>
+<footer>Estimates are not guarantees or betting advice. Fixture availability depends on the public data service.</footer>
 </main>
-
 <script>
 (function(){
 "use strict";
@@ -98,101 +94,128 @@ const leagues={
 "ita.1":"Serie A","fra.1":"Ligue 1","ned.1":"Eredivisie",
 "uefa.champions":"Champions League"
 };
-let fixtures=[],picks=[],tracker=read("fp_tracker",[]),busy=false;
+let fixtures=[],picks=[],busy=false;
+let tracker=read("fp_tracker",[]);
 
 function read(k,d){
  try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}
 }
 function store(){
  try{localStorage.setItem("fp_tracker",JSON.stringify(tracker))}
- catch(e){message("Browser storage is full or unavailable.")}
+ catch(e){message("Unable to save: device storage may be full.")}
 }
 function esc(v){
  return String(v??"").replace(/[&<>"']/g,c=>({
  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
  }[c]));
 }
-function message(t){$("status").textContent=t}
+function message(s){$("status").textContent=s}
 function showTab(id){
- ["fixtures","acc","tracker"].forEach(x=>{
-  $(x).hidden=x!==id;
-  document.querySelector('[data-tab="'+x+'"]').classList.toggle("active",x===id);
+ ["fixtures","acc","tracker"].forEach(t=>{
+  $(t).hidden=t!==id;
+  document.querySelector('[data-tab="'+t+'"]').classList.toggle("active",t===id);
  });
 }
 document.querySelectorAll("[data-tab]").forEach(b=>
  b.addEventListener("click",()=>showTab(b.dataset.tab))
 );
-function ymd(d){
- return d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,"0")+
- String(d.getUTCDate()).padStart(2,"0");
+function dateKey(d){
+ return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+
+ String(d.getDate()).padStart(2,"0");
+}
+function monthKey(d){
+ return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0");
 }
 function dateText(s){
  const d=new Date(s);
  return isNaN(d)?"Date TBC":d.toLocaleString([],{
-  weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"
+ weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"
  });
 }
-function probabilities(home,away){
- // Transparent baseline only: not model-derived or team-strength adjusted.
+function probabilities(){
+ // Clearly labelled baseline estimates, not trained model predictions.
  return [45,27,28];
 }
 async function getJSON(url){
  const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),15000);
+ const timer=setTimeout(()=>controller.abort(),12000);
  try{
-  const r=await fetch(url,{signal:controller.signal,cache:"no-store"});
-  if(!r.ok)throw Error("The data service returned HTTP "+r.status+".");
-  return await r.json();
+  const response=await fetch(url,{signal:controller.signal,cache:"no-store"});
+  if(!response.ok)throw Error("HTTP "+response.status);
+  return await response.json();
  }catch(e){
-  if(e.name==="AbortError")throw Error("The request timed out. Try again shortly.");
-  if(e instanceof SyntaxError)throw Error("The data service returned an unreadable response.");
-  if(e.message==="Failed to fetch"||e instanceof TypeError)
-   throw Error("Your browser could not reach the public football-data service. Check your connection or try again later.");
+  if(e.name==="AbortError")throw Error("Request timed out.");
+  if(e instanceof SyntaxError)throw Error("The service returned invalid data.");
+  if(e instanceof TypeError)throw Error("Network connection failed. Check internet access.");
   throw e;
- }finally{clearTimeout(timeout)}
+ }finally{clearTimeout(timer)}
 }
 async function load(){
  if(busy)return;
- busy=true;$("load").disabled=true;$("load").textContent="Loading…";
+ busy=true;
+ $("load").disabled=true;
+ $("load").textContent="Loading…";
  $("matches").innerHTML="";
- message("Fetching fixtures. This may take a few seconds…");
+ fixtures=[];
+ message("Connecting to the public football-data service…");
  try{
   const league=$("league").value;
   const start=new Date();
-  const end=new Date(Date.now()+Number($("days").value)*86400000);
-  const url="https://site.api.espn.com/apis/site/v2/sports/soccer/"+
-   encodeURIComponent(league)+"/scoreboard?dates="+ymd(start)+"-"+ymd(end)+"&limit=300";
-  const data=await getJSON(url);
-  const events=Array.isArray(data.events)?data.events:[];
-  fixtures=events.map(ev=>{
-   const comp=ev.competitions&&ev.competitions[0];
-   const teams=comp&&comp.competitors||[];
-   const h=teams.find(t=>t.homeAway==="home");
-   const a=teams.find(t=>t.homeAway==="away");
-   if(!h||!a)return null;
+  const end=new Date(start.getTime()+Number($("days").value)*86400000);
+  const months=[];
+  for(let d=new Date(start.getFullYear(),start.getMonth(),1);
+      d<=end;
+      d.setMonth(d.getMonth()+1)){
+   months.push(monthKey(d));
+  }
+  const allEvents=[];
+  // Fetch by month rather than date range (the range request returns HTTP 400).
+  for(const month of months){
+   message("Loading fixtures for "+month+"…");
+   const url="https://site.api.espn.com/apis/site/v2/sports/soccer/"+
+      encodeURIComponent(league)+"/scoreboard?dates="+month+"&limit=300";
+   const data=await getJSON(url);
+   if(Array.isArray(data.events))allEvents.push(...data.events);
+  }
+  const seen=new Set();
+  fixtures=allEvents.filter(ev=>{
+   if(!ev||!ev.id||seen.has(String(ev.id)))return false;
+   seen.add(String(ev.id));
+   const time=new Date(ev.date).getTime();
+   if(!Number.isFinite(time)||time<start.getTime()||time>end.getTime())return false;
+   const state=ev.status?.type?.state;
+   return state==="pre";
+  }).map(ev=>{
+   const comp=ev.competitions?.[0];
+   const teams=comp?.competitors||[];
+   const home=teams.find(t=>t.homeAway==="home");
+   const away=teams.find(t=>t.homeAway==="away");
+   if(!home||!away)return null;
    return {
-    id:String(ev.id),date:ev.date,home:h.team?.displayName||h.team?.name||"Home",
-    away:a.team?.displayName||a.team?.name||"Away",
-    status:ev.status?.type?.description||"Scheduled",
-    state:ev.status?.type?.state||"pre",
+    id:String(ev.id),date:ev.date,
+    home:home.team?.displayName||home.team?.name||"Home",
+    away:away.team?.displayName||away.team?.name||"Away",
     league:leagues[league]
    };
-  }).filter(x=>x&&x.state==="pre");
+  }).filter(Boolean).sort((a,b)=>new Date(a.date)-new Date(b.date));
   renderFixtures();
   message(fixtures.length
-   ?"Loaded "+fixtures.length+" upcoming fixtures. The displayed probabilities are baseline estimates only."
-   :"The service responded, but no upcoming fixtures were found for this competition and date range. Try 30 days or another competition.");
+   ?"Loaded "+fixtures.length+" upcoming fixtures. Note: probabilities are baseline estimates, not AI predictions."
+   :"The request succeeded but no upcoming fixtures were found. Try another competition or a longer date range.");
  }catch(e){
-  message("Load failed: "+e.message+"\n\nNo token is needed. If this persists, the public data service may be unavailable or may have changed its API.");
+  message("Load failed: "+e.message+
+   "\n\nThis is an external data-service issue, not your token. Try again later. If it continues, the provider may be blocking requests or may have changed its API.");
  }finally{
-  busy=false;$("load").disabled=false;$("load").textContent="Load fixtures";
+  busy=false;
+  $("load").disabled=false;
+  $("load").textContent="Load fixtures";
  }
 }
 function renderFixtures(){
  if(!fixtures.length){$("matches").innerHTML="";return}
  $("matches").innerHTML=fixtures.map(m=>{
-  const p=probabilities(m.home,m.away);
-  const chosen=picks.find(x=>x.id===m.id);
+  const p=probabilities();
+  const selected=picks.find(x=>x.id===m.id);
   return `<article class="match">
    <div class="badge">${esc(m.league)}</div>
    <p class="muted">${esc(dateText(m.date))}</p>
@@ -202,33 +225,34 @@ function renderFixtures(){
     <div class="prob"><small>DRAW</small><strong>${p[1]}%</strong></div>
     <div class="prob"><small>AWAY</small><strong>${p[2]}%</strong></div>
    </div>
-   <p class="muted">Baseline only — not adjusted for team form or injuries.</p>
+   <p class="muted">Simple baseline only; not adjusted for form, injuries or team strength.</p>
    <label>Choose outcome</label>
    <select data-select="${esc(m.id)}">
-    <option value="">Select Home / Draw / Away</option>
-    <option value="HOME" ${chosen?.outcome==="HOME"?"selected":""}>Home win</option>
-    <option value="DRAW" ${chosen?.outcome==="DRAW"?"selected":""}>Draw</option>
-    <option value="AWAY" ${chosen?.outcome==="AWAY"?"selected":""}>Away win</option>
+    <option value="">Select outcome</option>
+    <option value="HOME" ${selected?.outcome==="HOME"?"selected":""}>Home win</option>
+    <option value="DRAW" ${selected?.outcome==="DRAW"?"selected":""}>Draw</option>
+    <option value="AWAY" ${selected?.outcome==="AWAY"?"selected":""}>Away win</option>
    </select>
    <button class="primary" data-add="${esc(m.id)}" style="width:100%">Add to accumulator</button>
   </article>`;
  }).join("");
 }
 $("matches").addEventListener("click",e=>{
- const b=e.target.closest("[data-add]");if(!b)return;
+ const b=e.target.closest("[data-add]");
+ if(!b)return;
  const m=fixtures.find(x=>x.id===b.dataset.add);
- const s=document.querySelector('[data-select="'+CSS.escape(b.dataset.add)+'"]');
- if(!m||!s||!s.value){message("Select Home, Draw or Away before adding.");return}
- const p=probabilities(m.home,m.away);
+ const s=Array.from(document.querySelectorAll("[data-select]")).find(x=>x.dataset.select===b.dataset.add);
+ if(!m||!s||!s.value){message("Choose Home, Draw or Away first.");return}
+ const p=probabilities();
  picks=picks.filter(x=>x.id!==m.id);
- picks.push({id:m.id,home:m.home,away:m.away,date:m.date,
-  outcome:s.value,prob:p[({HOME:0,DRAW:1,AWAY:2})[s.value]]});
+ picks.push({id:m.id,home:m.home,away:m.away,date:m.date,outcome:s.value,
+  prob:p[({HOME:0,DRAW:1,AWAY:2})[s.value]]});
  renderAcc();
  message("Selection added.");
 });
 $("matches").addEventListener("change",e=>{
- const s=e.target.closest("[data-select]");if(!s)return;
- if(!s.value){picks=picks.filter(x=>x.id!==s.dataset.select);renderAcc()}
+ const s=e.target.closest("[data-select]");
+ if(s&&!s.value){picks=picks.filter(x=>x.id!==s.dataset.select);renderAcc()}
 });
 function renderAcc(){
  $("count").textContent=picks.length;
@@ -239,39 +263,37 @@ function renderAcc(){
  ).join(""):"No selections yet.";
 }
 $("accList").addEventListener("click",e=>{
- const b=e.target.closest("[data-remove]");if(!b)return;
- picks=picks.filter(p=>p.id!==b.dataset.remove);renderAcc();
+ const b=e.target.closest("[data-remove]");
+ if(b){picks=picks.filter(p=>p.id!==b.dataset.remove);renderAcc()}
 });
 $("save").addEventListener("click",()=>{
- if(!picks.length){message("Choose at least one match first.");return}
+ if(!picks.length){message("Add at least one selection first.");return}
  tracker.unshift({id:String(Date.now()),created:new Date().toISOString(),
-  picks:picks.map(p=>({...p})),result:"Pending"});
- store();renderTracker();message("Accumulator saved on this device.");
+ picks:picks.map(p=>({...p})),result:"Pending"});
+ store();renderTracker();message("Accumulator saved.");
 });
 $("clearAcc").addEventListener("click",()=>{picks=[];renderAcc()});
 function renderTracker(){
  $("trackList").innerHTML=tracker.length?tracker.map(t=>
  `<div class="panel"><strong>Accumulator · ${esc(dateText(t.created))}</strong>
  <p>${t.picks.map(p=>esc(p.home)+" vs "+esc(p.away)+" — "+esc(p.outcome)).join("<br>")}</p>
- <label>Result</label>
- <select data-result="${esc(t.id)}">
+ <label>Result</label><select data-result="${esc(t.id)}">
  ${["Pending","Won","Lost","Void"].map(x=>`<option ${t.result===x?"selected":""}>${x}</option>`).join("")}
  </select></div>`
  ).join(""):"No saved picks yet.";
 }
 $("trackList").addEventListener("change",e=>{
- const s=e.target.closest("[data-result]");if(!s)return;
+ const s=e.target.closest("[data-result]");
+ if(!s)return;
  const t=tracker.find(x=>x.id===s.dataset.result);
  if(t){t.result=s.value;store();renderTracker()}
 });
 $("clearTrack").addEventListener("click",()=>{
- if(confirm("Delete all tracked accumulators?")){
-  tracker=[];store();renderTracker();
- }
+ if(confirm("Delete all tracked picks?")){tracker=[];store();renderTracker()}
 });
 $("load").addEventListener("click",load);
-$("league").addEventListener("change",()=>{fixtures=[];$("matches").innerHTML=""});
-$("days").addEventListener("change",()=>{fixtures=[];$("matches").innerHTML=""});
+$("league").addEventListener("change",()=>{$("matches").innerHTML="";fixtures=[]});
+$("days").addEventListener("change",()=>{$("matches").innerHTML="";fixtures=[]});
 renderAcc();renderTracker();
 })();
 </script>
