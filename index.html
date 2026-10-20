@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -55,7 +56,7 @@ h3{font-size:16px;margin:0 0 8px}
 .tag.warn{color:var(--amber)}
 .tag.bad{color:var(--red)}
 
-/* One shared confidence colour scale across the app */
+/* Shared confidence colours across the app */
 .tag.confidence-high{
  color:#7ff0b1;
  background:#164b35;
@@ -72,6 +73,30 @@ h3{font-size:16px;margin:0 0 8px}
  border:1px solid #963f4e;
 }
 .confidence-legend{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 14px}
+
+/* Top 10: keep confidence fixed at the top-right.
+   Team names use the remaining space and can wrap naturally. */
+.top-pick-header{
+ display:grid;
+ grid-template-columns:minmax(0,1fr) auto;
+ align-items:start;
+ column-gap:10px;
+ width:100%;
+}
+.top-pick-teams{
+ min-width:0;
+ overflow-wrap:anywhere;
+ word-break:normal;
+ font-size:15px;
+ font-weight:800;
+ line-height:1.4;
+}
+.top-pick-confidence{
+ justify-self:end;
+ align-self:start;
+ flex-shrink:0;
+ white-space:nowrap;
+}
 .probrow{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}
 .prob{background:var(--panel2);padding:9px 5px;border-radius:10px;text-align:center;min-width:0}
 .prob strong{display:block;font-size:19px}
@@ -605,12 +630,6 @@ function scoreDistribution(homeLambda,awayLambda,maxGoals=10){
  };
 }
 
-/*
- * Round expected goals to a readable score.
- * If that score conflicts with the model's leading outcome,
- * adjust the score so it agrees with the selected prediction.
- * The underlying expected goals and probabilities are unchanged.
- */
 function consistentPredictedScore(homeLambda,awayLambda,prediction){
  let homeGoals=Math.max(0,Math.round(homeLambda));
  let awayGoals=Math.max(0,Math.round(awayLambda));
@@ -653,8 +672,6 @@ function calculatePrediction(m,previous,model){
 
  const sorted=Object.values(probs).sort((x,y)=>y-x);
  const coverage=clamp(Math.min(h.count,a.count)/10,0,1);
-
- /* Existing confidence calculation retained; maximum is 9/10. */
  const confidence=clamp(
   Math.round(3+(sorted[0]-sorted[1])*16+coverage*2),
   1,
@@ -790,7 +807,7 @@ function renderFixtures(){
   :"";
 
  $("fixtureList").innerHTML=list.length
-  ?list.map(matchCard).join()
+  ?list.map(matchCard).join("")
   :`<div class="empty">${state.loaded?"No upcoming fixtures found. Try another league or longer window.":"Load fixtures to see predictions."}</div>`;
 
  if(state.topMode)renderTop10();
@@ -812,16 +829,16 @@ function renderTop10(){
  `+all.map((m,i)=>{
   const added=state.acc.some(x=>x.id===eventId(m));
   return`<div class="pick">
-   <div class="row between wrap">
-    <strong>${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong>
-    ${confidenceBadge(m.confidence)}
+   <div class="top-pick-header">
+    <strong class="top-pick-teams">${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong>
+    <div class="top-pick-confidence">${confidenceBadge(m.confidence)}</div>
    </div>
-   <div class="meta">${esc(m.league)} · ${esc(fmtDate(m.date))}</div>
+   <div class="meta" style="margin-top:6px">${esc(m.league)} · ${esc(fmtDate(m.date))}</div>
    <div class="row wrap" style="margin:10px 0">
     <span class="tag">Pick: ${outcomeName(m.prediction)}</span>
     <span class="tag">${Math.round(m.probs[m.prediction]*100)}% probability</span>
    </div>
-   <div class="meta">Predicted score: ${esc(m.predictedScore)}</div>
+   <div class="meta" style="margin-bottom:9px">Predicted score: ${esc(m.predictedScore)}</div>
    <button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(eventId(m))}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button>
   </div>`;
  }).join("")||`<div class="empty">No upcoming matches found.</div>`;
@@ -899,7 +916,6 @@ function snapshotPredictions(matches){
   const existing=state.history.find(x=>x.id===id);
 
   if(existing){
-   /* Add confidence to older snapshots if it was not saved previously. */
    if(!Number.isFinite(Number(existing.confidence))){
     existing.confidence=m.confidence;
     store("fp_prediction_history",state.history);
