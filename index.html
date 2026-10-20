@@ -4,217 +4,349 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#123c2a">
+<meta name="theme-color" content="#101827">
 <title>Footy Picks</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f2f6f2;color:#17251d;font:16px -apple-system,BlinkMacSystemFont,sans-serif}
-header{background:#123c2a;color:white;padding:23px 18px;border-radius:0 0 20px 20px}
-h1{margin:0 0 5px}header p{margin:0;color:#d5e6da;font-size:14px}
-main{max-width:700px;margin:auto;padding:14px}
-nav{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
-button,select,input{font:inherit;border-radius:10px;padding:11px;border:1px solid #d0ddd2}
-button{background:#176b45;color:white;border:0;font-weight:650;cursor:pointer}
-nav button{flex:1;background:#e0e9e1;color:#23432f;font-size:13px}
-nav button.active{background:#176b45;color:white}
-.card{background:white;border:1px solid #e0e8e1;border-radius:15px;padding:15px;margin:10px 0}
-small,.muted{color:#657368;font-size:12px}
-label{display:block;margin:12px 0 5px;font-size:13px}
-input,select{width:100%;background:white}
-.row{display:flex;gap:8px;align-items:center}
-.row>*{flex:1;min-width:0}
-.teams{display:flex;justify-content:space-between;gap:8px;font-weight:700}
-.teams span{flex:1}.teams span:last-child{text-align:right}
-.probs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:13px 0}
-.prob{text-align:center;background:#f2f7f2;border-radius:10px;padding:10px 3px}
-.prob b{display:block;font-size:19px}.prob small{font-size:11px}
-hr{border:0;border-top:1px solid #e5ebe5;margin:12px 0}
+:root{color-scheme:dark;--bg:#101827;--card:#1c293b;--green:#65e6a0;--muted:#a8b6c9}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:#f4f7fb;font:16px -apple-system,BlinkMacSystemFont,Arial,sans-serif}
+header{padding:22px 16px 12px;background:#152236}
+h1{margin:0;font-size:27px}h2{font-size:20px;margin:10px 0}
+p{line-height:1.45}.muted,small{color:var(--muted)}
+main{max-width:760px;margin:auto;padding:14px}
+nav{display:flex;gap:7px;overflow:auto;padding:12px 0}
+button,select,input{font:inherit;border-radius:10px;padding:12px;border:1px solid #40516a}
+button{background:#293951;color:white;cursor:pointer}
+button:disabled{opacity:.5}
+button.primary{background:var(--green);color:#10251b;border:0;font-weight:700}
+nav button.active{background:var(--green);color:#10251b}
+input,select{background:#111d2e;color:white;width:100%;margin:5px 0 12px}
+label{display:block;color:var(--muted);font-size:14px}
+.panel,.match{background:var(--card);padding:15px;border-radius:14px;margin:12px 0}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>*{flex:1}
+.match h3{font-size:17px;margin:0 0 6px}
+.probs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}
+.prob{background:#111d2e;border-radius:9px;padding:10px 4px;text-align:center}
+.prob strong{display:block;font-size:20px;color:var(--green)}
+.prob small{font-size:12px}
+.badge{font-size:12px;color:var(--green)}
+#status{white-space:pre-wrap;overflow-wrap:anywhere}
 [hidden]{display:none!important}
-.status{background:#fff5d9;border-radius:10px;padding:11px;font-size:13px;line-height:1.4}
+footer{padding:15px 0;color:var(--muted);font-size:12px}
 </style>
 </head>
 <body>
 <header>
-<h1>⚽ Footy Picks</h1>
-<p>Fixtures · 1X2 probabilities · Accumulators · Results tracker</p>
+  <h1>⚽ Footy Picks</h1>
+  <p class="muted">Football fixtures · 1X2 estimates · Pick tracker</p>
 </header>
 <main>
 <nav>
-<button class="active" data-tab="matches">Fixtures</button>
-<button data-tab="acc">Accumulator</button>
-<button data-tab="history">Tracker</button>
+<button class="active" data-tab="fixtures">Fixtures</button>
+<button data-tab="accumulator">Accumulator <span id="accCount">0</span></button>
+<button data-tab="tracker">Tracker</button>
 <button data-tab="setup">Data setup</button>
 </nav>
 
-<section id="matches">
-<div class="row"><h2>Upcoming matches</h2><button id="refresh">Refresh</button></div>
-<p id="status" class="status">Add your API token under Data setup to load real fixtures.</p>
-<div id="games"></div>
+<section id="fixtures">
+  <div class="panel">
+    <div class="row">
+      <div><label for="league">Competition</label>
+      <select id="league">
+        <option value="PL">Premier League</option>
+        <option value="PD">La Liga</option>
+        <option value="BL1">Bundesliga</option>
+        <option value="SA">Serie A</option>
+        <option value="FL1">Ligue 1</option>
+        <option value="DED">Eredivisie</option>
+        <option value="CL">Champions League</option>
+      </select></div>
+      <div><label for="days">Show next</label>
+      <select id="days">
+        <option value="7">7 days</option>
+        <option value="14" selected>14 days</option>
+        <option value="30">30 days</option>
+      </select></div>
+    </div>
+    <button class="primary" id="loadBtn" style="width:100%">Load fixtures & predictions</button>
+    <p id="status" role="status" class="muted">Enter your API token under Data setup, then load fixtures.</p>
+  </div>
+  <div id="matches"></div>
 </section>
 
-<section id="acc" hidden>
-<h2>Accumulator</h2>
-<div class="card">
-<div id="selections">No picks selected yet.</div>
-<hr>
-<b>Estimated combined probability: <span id="combined">—</span></b>
-<p><button id="save">Save accumulator</button></p>
-</div>
+<section id="accumulator" hidden>
+  <div class="panel">
+    <h2>Your accumulator</h2>
+    <p class="muted">Choose outcomes from the fixtures list.</p>
+    <div id="accList">No selections yet.</div>
+    <button id="saveAcc" class="primary" style="width:100%;margin-top:12px">Save accumulator to tracker</button>
+    <button id="clearAcc" style="width:100%;margin-top:8px">Clear selections</button>
+  </div>
 </section>
 
-<section id="history" hidden>
-<h2>Prediction tracker</h2>
-<div class="card">
-<div id="historylist">No saved picks yet.</div>
-<button id="clear">Clear tracker</button>
-</div>
+<section id="tracker" hidden>
+  <div class="panel">
+    <h2>Pick tracker</h2>
+    <p class="muted">Saved picks are stored on this device. Mark each selection when its result is known.</p>
+    <div id="tracked"></div>
+    <button id="clearTracker" style="width:100%;margin-top:12px">Clear tracker</button>
+  </div>
 </section>
 
 <section id="setup" hidden>
-<h2>Data setup</h2>
-<div class="card">
-<p class="muted">Your token is saved in this browser on this device. Never put it directly into this public HTML file or share it.</p>
-<label for="token">football-data.org API token</label>
-<input id="token" type="password" autocomplete="off" placeholder="Paste your token here">
-<label for="league">Competition</label>
-<select id="league">
-<option value="PL">Premier League</option>
-<option value="ELC">Championship</option>
-<option value="CL">Champions League</option>
-<option value="PD">Spanish La Liga</option>
-<option value="BL1">German Bundesliga</option>
-<option value="SA">Italian Serie A</option>
-<option value="FL1">French Ligue 1</option>
-</select>
-<p><button id="connect">Save token & load fixtures</button></p>
-<p class="muted">Only competitions included in your API plan will load. If the request fails, the service may be blocking browser requests or your plan may not include that competition.</p>
-</div>
+  <div class="panel">
+    <h2>Data setup</h2>
+    <label for="token">football-data.org API token</label>
+    <input id="token" type="password" autocomplete="off" placeholder="Paste your API token here">
+    <div class="row">
+      <button class="primary" id="saveToken">Save token & load fixtures</button>
+      <button id="forgetToken">Forget token</button>
+    </div>
+    <p class="muted">Your token is stored in this browser's local storage. It is not sent to this app's server, but anyone who can run or modify code on this public site could potentially access it. For stronger security, use a private backend proxy.</p>
+    <p class="muted">Free API access and available competitions depend on your account. If loading fails, the error will appear below.</p>
+  </div>
 </section>
-<p class="muted">Probabilities are rough estimates based on current league standings, not bookmaker odds or a trained model. No guarantee of results. Tracker data stays in this browser.</p>
-</main>
-<script>
-const $=id=>document.getElementById(id);
-let games=[], picks=JSON.parse(localStorage.getItem("fp_picks")||"[]");
-let history=JSON.parse(localStorage.getItem("fp_history")||"[]");
 
-document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
- document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("active",x===b));
- ["matches","acc","history","setup"].forEach(id=>$(id).hidden=id!==b.dataset.tab);
+<footer>For information and entertainment only. Estimates are not betting advice. Never stake money you cannot afford to lose.</footer>
+</main>
+
+<script>
+(function(){
+"use strict";
+const $ = id => document.getElementById(id);
+const API = "https://api.football-data.org/v4/";
+let fixtures = [];
+let standings = {};
+let picks = [];
+let tracker = readStore("fp_tracker", []);
+let savedPicks = readStore("fp_acc", []);
+
+function readStore(key, fallback){
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+  catch(e){ return fallback; }
+}
+function writeStore(key, value){
+  try { localStorage.setItem(key, JSON.stringify(value)); }
+  catch(e){ status("Could not save data in this browser."); }
+}
+function status(message){ $("status").textContent = message; }
+function esc(s){
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function dateLabel(s){
+  return new Date(s).toLocaleString([], {weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+}
+function showTab(name){
+  ["fixtures","accumulator","tracker","setup"].forEach(t=>{
+    $(t).hidden = t !== name;
+    document.querySelector('[data-tab="'+t+'"]').classList.toggle("active",t===name);
+  });
+}
+document.querySelectorAll("[data-tab]").forEach(btn=>{
+  btn.addEventListener("click",()=>showTab(btn.dataset.tab));
 });
 
-$("token").value=localStorage.getItem("fp_token")||"";
-$("league").value=localStorage.getItem("fp_league")||"PL";
-$("connect").onclick=async()=>{
- const t=$("token").value.trim();
- if(!t){alert("Paste your API token first.");return}
- localStorage.setItem("fp_token",t);
- localStorage.setItem("fp_league",$("league").value);
- await loadFixtures();
-};
-$("refresh").onclick=loadFixtures;
-
-async function api(path){
- const token=localStorage.getItem("fp_token");
- const res=await fetch("https://api.football-data.org/v4/"+path,{
-  headers:{"X-Auth-Token":token}
- });
- if(!res.ok)throw Error(res.status+" "+res.statusText);
- return res.json();
+function probabilities(home, away){
+  const h = standings[home] || {};
+  const a = standings[away] || {};
+  const hStrength = (h.points || 0) + (h.gd || 0)*0.45;
+  const aStrength = (a.points || 0) + (a.gd || 0)*0.45;
+  const diff = Math.max(-12, Math.min(12,(hStrength-aStrength)/8));
+  const homeScore = Math.exp(0.35 + diff*0.25);
+  const awayScore = Math.exp(-diff*0.25);
+  const drawScore = Math.exp(0.05 - Math.abs(diff)*0.12);
+  const total = homeScore + drawScore + awayScore;
+  return [
+    Math.round(homeScore/total*100),
+    Math.round(drawScore/total*100),
+    0
+  ].map((v,i,arr)=> i===2 ? 100-arr[0]-arr[1] : v);
+}
+async function api(path, token){
+  const response = await fetch(API+path,{
+    method:"GET",
+    headers:{"X-Auth-Token":token,"Accept":"application/json"}
+  });
+  const text = await response.text();
+  let data;
+  try { data = JSON.parse(text); } catch(e){ data = {}; }
+  if(!response.ok){
+    throw new Error(data.message || data.error || ("API returned HTTP "+response.status));
+  }
+  return data;
 }
 async function loadFixtures(){
- const token=localStorage.getItem("fp_token")||$("token").value.trim();
- if(!token){$("status").textContent="Open Data setup and enter your API token.";return}
- $("status").textContent="Loading fixtures and league table…";
- try{
-  const league=$("league").value;
-  const now=new Date(), end=new Date(now);end.setDate(end.getDate()+14);
-  const fmt=d=>d.toISOString().slice(0,10);
-  const [m,s]=await Promise.all([
-   api("competitions/"+league+"/matches?dateFrom="+fmt(now)+"&dateTo="+fmt(end)),
-   api("competitions/"+league+"/standings")
-  ]);
-  const table=s.standings?.find(x=>x.type==="TOTAL")?.table||[];
-  const rank={};
-  table.forEach(t=>rank[t.team.id]={
-   pts:t.points||0,played:t.playedGames||1,
-   gd:t.goalDifference||0
-  });
-  games=(m.matches||[]).filter(x=>["SCHEDULED","TIMED"].includes(x.status))
-   .map(x=>({...x,p:probability(rank[x.homeTeam.id],rank[x.awayTeam.id])}));
-  renderGames();
-  $("status").textContent=games.length?
-   "Loaded "+games.length+" real fixtures. Probabilities are basic estimates.":
-   "No upcoming fixtures found in this date range for this competition.";
- }catch(e){
-  $("status").textContent="Could not load data: "+e.message+
-   ". Check your token, competition access and connection. If the browser blocks the API request, a secure proxy will be needed.";
- }
+  const token = $("token").value.trim() || localStorage.getItem("fp_token") || "";
+  if(!token){
+    status("Please enter your API token in Data setup first.");
+    showTab("setup");
+    $("token").focus();
+    return;
+  }
+  localStorage.setItem("fp_token",token);
+  const btn = $("loadBtn");
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  $("matches").innerHTML = "";
+  status("Connecting to football-data.org…");
+  const league = $("league").value;
+  try {
+    const now = new Date();
+    const end = new Date(now.getTime()+Number($("days").value)*86400000);
+    const from = now.toISOString().slice(0,10);
+    const to = end.toISOString().slice(0,10);
+    const [matchData, tableData] = await Promise.all([
+      api("competitions/"+encodeURIComponent(league)+"/matches?dateFrom="+from+"&dateTo="+to,token),
+      api("competitions/"+encodeURIComponent(league)+"/standings",token).catch(()=>null)
+    ]);
+    standings = {};
+    const table = tableData && tableData.standings && tableData.standings.find(s=>s.type==="TOTAL");
+    if(table && table.table){
+      table.table.forEach(t=>{
+        standings[t.team.name]={points:t.points||0,gd:t.goalDifference||0};
+        if(t.team.shortName) standings[t.team.shortName]=standings[t.team.name];
+      });
+    }
+    fixtures = (matchData.matches || []).filter(m=>
+      ["SCHEDULED","TIMED"].includes(m.status)
+    );
+    renderFixtures();
+    status(fixtures.length
+      ? "Loaded "+fixtures.length+" upcoming fixture(s). Probabilities are heuristic estimates."
+      : "Connected successfully, but no scheduled fixtures were returned for this date range. Try a longer range or another competition.");
+  } catch(err) {
+    status("Could not load fixtures: "+err.message+
+      "\n\nCheck that your token is correct and your account supports this competition. If it mentions a network or CORS error, the browser cannot reach the API directly; a backend proxy is needed.");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Load fixtures & predictions";
+  }
 }
-function probability(h,a){
- if(!h||!a)return [45,27,28];
- const hs=h.pts/h.played, as=a.pts/a.played;
- const diff=Math.max(-1.5,Math.min(1.5,(hs-as)/3+(h.gd/h.played-a.gd/a.played)/12));
- let home=0.44+diff*0.20, draw=0.27-Math.abs(diff)*0.035;
- draw=Math.max(.18,Math.min(.31,draw));
- let away=1-home-draw;
- home=Math.max(.12,Math.min(.75,home));
- away=1-draw-home;
- const arr=[home,draw,away].map(x=>Math.max(.08,x));
- const sum=arr.reduce((x,y)=>x+y,0);
- return arr.map(x=>Math.round(x/sum*100));
+function renderFixtures(){
+  const host = $("matches");
+  if(!fixtures.length){host.innerHTML="";return;}
+  host.innerHTML = fixtures.map(m=>{
+    const p = probabilities(m.homeTeam.name,m.awayTeam.name);
+    const selected = picks.find(x=>x.id===m.id);
+    return `<article class="match">
+      <div class="badge">${esc(m.competition?.name || $("league").selectedOptions[0].textContent)}</div>
+      <p class="muted">${esc(dateLabel(m.utcDate))}</p>
+      <h3>${esc(m.homeTeam.name)} vs ${esc(m.awayTeam.name)}</h3>
+      <div class="probs">
+        <div class="prob"><small>HOME</small><strong>${p[0]}%</strong></div>
+        <div class="prob"><small>DRAW</small><strong>${p[1]}%</strong></div>
+        <div class="prob"><small>AWAY</small><strong>${p[2]}%</strong></div>
+      </div>
+      <label for="pick-${m.id}">Choose your outcome</label>
+      <select id="pick-${m.id}" data-pick="${m.id}">
+        <option value="">Select 1X2 outcome</option>
+        <option value="HOME" ${selected?.outcome==="HOME"?"selected":""}>Home win (${p[0]}%)</option>
+        <option value="DRAW" ${selected?.outcome==="DRAW"?"selected":""}>Draw (${p[1]}%)</option>
+        <option value="AWAY" ${selected?.outcome==="AWAY"?"selected":""}>Away win (${p[2]}%)</option>
+      </select>
+      <button data-add="${m.id}" class="primary" style="width:100%">Add to accumulator</button>
+    </article>`;
+  }).join("");
 }
-function renderGames(){
- const root=$("games");
- if(!games.length){root.innerHTML='<p class="muted">No fixtures loaded yet. Connect your data under Data setup.</p>';return}
- root.innerHTML="";
- games.forEach(g=>{
-  const d=document.createElement("div");d.className="card";
-  d.innerHTML=`<small>${g.competition?.name||g.area?.name||"Football"} · ${new Date(g.utcDate).toLocaleString()}</small>
-  <div class="teams" style="margin-top:10px"><span>${g.homeTeam.name}</span><span style="flex:0;color:#657368">vs</span><span>${g.awayTeam.name}</span></div>
-  <div class="probs">${g.p.map((p,i)=>`<div class="prob"><b>${p}%</b><small>${["Home","Draw","Away"][i]}</small></div>`).join("")}</div>
-  <div class="row"><select id="p${g.id}"><option value="">Choose pick…</option><option value="0">Home win</option><option value="1">Draw</option><option value="2">Away win</option></select><button data-pick="${g.id}">Add pick</button></div>`;
-  root.appendChild(d);
- });
- root.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{
-  const g=games.find(x=>x.id===Number(b.dataset.pick)),v=$("p"+g.id).value;
-  if(v===""){alert("Choose an outcome.");return}
-  if(picks.some(x=>x.id===g.id)){alert("That match is already selected.");return}
-  picks.push({id:g.id,match:g.homeTeam.name+" vs "+g.awayTeam.name,
-   outcome:["Home","Draw","Away"][Number(v)],prob:g.p[Number(v)]});
-  saveState();renderPicks();alert("Pick added.");
- });
+function addPick(id){
+  const m = fixtures.find(x=>String(x.id)===String(id));
+  if(!m)return;
+  const select = document.querySelector('[data-pick="'+id+'"]');
+  if(!select || !select.value){status("Choose Home, Draw or Away before adding the match.");return;}
+  const p = probabilities(m.homeTeam.name,m.awayTeam.name);
+  const item = {id:m.id,home:m.homeTeam.name,away:m.awayTeam.name,date:m.utcDate,outcome:select.value,prob:p[({HOME:0,DRAW:1,AWAY:2})[select.value]]};
+  picks = picks.filter(x=>x.id!==item.id);
+  picks.push(item);
+  renderAccumulator();
+  $("accCount").textContent=picks.length;
+  status("Added "+item.home+" vs "+item.away+" to your accumulator.");
 }
-function saveState(){
- localStorage.setItem("fp_picks",JSON.stringify(picks));
- localStorage.setItem("fp_history",JSON.stringify(history));
+$("matches").addEventListener("click",e=>{
+  const btn=e.target.closest("[data-add]");
+  if(btn)addPick(btn.dataset.add);
+});
+$("matches").addEventListener("change",e=>{
+  const s=e.target.closest("[data-pick]");
+  if(s && !s.value){
+    picks=picks.filter(x=>String(x.id)!==s.dataset.pick);
+    renderAccumulator();
+    $("accCount").textContent=picks.length;
+  }
+});
+function renderAccumulator(){
+  $("accCount").textContent=picks.length;
+  $("accList").innerHTML=picks.length ? picks.map((p,i)=>
+    `<div class="panel"><strong>${i+1}. ${esc(p.home)} vs ${esc(p.away)}</strong>
+    <p>${esc(p.outcome)} · estimated probability ${p.prob}%</p>
+    <button data-remove="${p.id}">Remove</button></div>`
+  ).join("") : "No selections yet.";
 }
-function renderPicks(){
- $("selections").innerHTML=picks.length?picks.map((p,i)=>
- `<p>${p.match}<br><small>${p.outcome} · ${p.prob}%</small> <button data-rm="${i}">Remove</button></p>`
- ).join(""):"No picks selected yet.";
- const probability=picks.reduce((a,p)=>a*p.prob/100,1);
- $("combined").textContent=picks.length?(probability*100).toFixed(2)+"%":"—";
- $("selections").querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{
-  picks.splice(Number(b.dataset.rm),1);saveState();renderPicks();
- });
+$("accList").addEventListener("click",e=>{
+  const b=e.target.closest("[data-remove]");
+  if(b){picks=picks.filter(p=>String(p.id)!==b.dataset.remove);renderAccumulator();}
+});
+$("saveAcc").addEventListener("click",()=>{
+  if(!picks.length){status("Add at least one selection first.");return;}
+  const item={id:Date.now(),created:new Date().toISOString(),picks:picks.map(p=>({...p})),result:"Pending"};
+  tracker.unshift(item);
+  writeStore("fp_tracker",tracker);
+  renderTracker();
+  status("Accumulator saved to your tracker.");
+});
+$("clearAcc").addEventListener("click",()=>{picks=[];renderAccumulator();});
+function renderTracker(){
+  $("tracked").innerHTML=tracker.length ? tracker.map(t=>
+    `<div class="panel"><strong>Accumulator · ${esc(dateLabel(t.created))}</strong>
+    <p>${t.picks.map(p=>esc(p.home)+" vs "+esc(p.away)+" — "+esc(p.outcome)).join("<br>")}</p>
+    <label>Result</label>
+    <select data-result="${t.id}">
+      <option ${t.result==="Pending"?"selected":""}>Pending</option>
+      <option ${t.result==="Won"?"selected":""}>Won</option>
+      <option ${t.result==="Lost"?"selected":""}>Lost</option>
+      <option ${t.result==="Void"?"selected":""}>Void</option>
+    </select></div>`
+  ).join("") : "<p>No saved picks yet.</p>";
 }
-$("save").onclick=()=>{
- if(!picks.length){alert("Add at least one pick.");return}
- history.unshift({date:new Date().toLocaleString(),title:"Accumulator",
-  detail:picks.map(p=>p.outcome+" — "+p.match).join("; ")});
- picks=[];saveState();renderPicks();renderHistory();alert("Saved on this device.");
-};
-function renderHistory(){
- $("historylist").innerHTML=history.length?history.map((h,i)=>
- `<p><b>${h.title}</b><br><small>${h.date}</small><br>${h.detail||""}
- <button data-del="${i}">Delete</button></p><hr>`
- ).join(""):"No saved picks yet.";
- $("historylist").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{
-  history.splice(Number(b.dataset.del),1);saveState();renderHistory();
- });
-}
-$("clear").onclick=()=>{if(confirm("Clear all saved tracker entries?")){history=[];saveState();renderHistory()}};
-renderPicks();renderHistory();
+$("tracked").addEventListener("change",e=>{
+  const s=e.target.closest("[data-result]");
+  if(!s)return;
+  const t=tracker.find(x=>String(x.id)===s.dataset.result);
+  if(t){t.result=s.value;writeStore("fp_tracker",tracker);renderTracker();}
+});
+$("clearTracker").addEventListener("click",()=>{
+  if(confirm("Delete all tracked accumulators?")){
+    tracker=[];writeStore("fp_tracker",tracker);renderTracker();
+  }
+});
+$("loadBtn").addEventListener("click",loadFixtures);
+$("saveToken").addEventListener("click",()=>{
+  const t=$("token").value.trim();
+  if(!t){status("Paste your API token into the box first.");$("token").focus();return;}
+  localStorage.setItem("fp_token",t);
+  showTab("fixtures");
+  loadFixtures();
+});
+$("forgetToken").addEventListener("click",()=>{
+  localStorage.removeItem("fp_token");
+  $("token").value="";
+  status("Saved token removed from this browser.");
+});
+$("league").addEventListener("change",()=>{
+  fixtures=[];$("matches").innerHTML="";
+  status("Competition changed. Tap Load fixtures & predictions.");
+});
+$("days").addEventListener("change",()=>{
+  status("Date range changed. Tap Load fixtures & predictions.");
+});
+const existingToken=localStorage.getItem("fp_token");
+if(existingToken)$("token").value=existingToken;
+renderAccumulator();
+renderTracker();
+})();
 </script>
 </body>
 </html>
+
 
