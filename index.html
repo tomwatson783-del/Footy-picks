@@ -132,6 +132,9 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 .live-card.priority{border-color:#347c60}
 .live-card.demo{border:1px dashed var(--amber);background:linear-gradient(145deg,#302b20,var(--panel) 50%)}
 .live-rank{font-size:11px;font-weight:900;letter-spacing:.5px;color:var(--green)}
+.red-card-flag{display:inline-flex;align-items:center;gap:5px;background:#5b1e2a;border:1px solid #c94757;color:#ffe3e7;border-radius:8px;padding:6px 8px;font-size:11px;font-weight:900;letter-spacing:.2px;line-height:1.25}
+.red-card-flag .red-dot{display:inline-block;width:9px;height:12px;background:#ff5365;border-radius:2px;box-shadow:0 0 0 2px #ff536522;flex-shrink:0}
+.red-card-note{color:#ffb5bd;font-weight:800}
 .live-score{font-size:30px;font-weight:900;letter-spacing:-1px;white-space:nowrap}
 .live-team{font-size:14px;font-weight:800;overflow-wrap:anywhere}
 .live-minute{font-size:11px;color:var(--amber);font-weight:800}
@@ -889,6 +892,8 @@ function liveOpportunityAssessment(m,stats){
  const homeStats=stats?.home||{},awayStats=stats?.away||{};
  const hShots=statNum(homeStats.shots),aShots=statNum(awayStats.shots),hTarget=statNum(homeStats.shotsOnTarget),aTarget=statNum(awayStats.shotsOnTarget);
  const hPoss=statNum(homeStats.possession),aPoss=statNum(awayStats.possession),hXg=statNum(homeStats.xg),aXg=statNum(awayStats.xg),hRed=statNum(homeStats.redCards),aRed=statNum(awayStats.redCards);
+ const redCardsKnown=hRed!==null||aRed!==null;
+ const redDiff=redCardsKnown?(aRed??0)-(hRed??0):0; // Positive means home has the numerical advantage.
  let hPressure=0,aPressure=0,available=0;
  if(hShots!==null&&aShots!==null){available++;hPressure+=(hShots-aShots)*1.1;aPressure+=(aShots-hShots)*1.1}
  if(hTarget!==null&&aTarget!==null){available++;hPressure+=(hTarget-aTarget)*3;aPressure+=(aTarget-hTarget)*3}
@@ -899,14 +904,19 @@ function liveOpportunityAssessment(m,stats){
  const progress=minute===null?.5:clamp(minute/90,0,1.35);
  const scoreImpact=hasScore?(hs-as)*(.30+1.25*progress):0;
  // Heuristic reweighting of pre-game probabilities by the live score, clock and available pressure stats.
- const homeWeight=homeProb*Math.exp(scoreImpact+pressure*.65);
- const awayWeight=awayProb*Math.exp(-scoreImpact-pressure*.65);
+ let homeWeight=homeProb*Math.exp(scoreImpact+pressure*.65);
+ let awayWeight=awayProb*Math.exp(-scoreImpact-pressure*.65);
  const drawWeight=drawProb*Math.exp(-(hasScore?Math.abs(hs-as):0)*(.28+.65*progress)+progress*.48);
+ // A sending-off changes the manpower balance. Apply a stronger adjustment when more match time remains.
+ const timeRemaining=minute===null?.55:clamp((90-minute)/90,0,1);
+ const redCardImpact=redCardsKnown?clamp(redDiff*(.22+.50*timeRemaining),-.80,.80):0;
+ homeWeight*=Math.exp(redCardImpact/2);
+ awayWeight*=Math.exp(-redCardImpact/2);
  const total=homeWeight+awayWeight+drawWeight||1;
  const live={H:homeWeight/total*100,D:drawWeight/total*100,A:awayWeight/total*100};
  const teamData=[
-  {side:"home",name:m.home,pre:homeProb*100,live:live.H,pressure:pressure,red:hRed,score:hs,oppScore:as},
-  {side:"away",name:m.away,pre:awayProb*100,live:live.A,pressure:-pressure,red:aRed,score:as,oppScore:hs}
+  {side:"home",name:m.home,pre:homeProb*100,live:live.H,pressure:pressure,red:hRed,redAdvantage:redCardsKnown&&redDiff>0,score:hs,oppScore:as},
+  {side:"away",name:m.away,pre:awayProb*100,live:live.A,pressure:-pressure,red:aRed,redAdvantage:redCardsKnown&&redDiff<0,score:as,oppScore:hs}
  ];
  for(const t of teamData){
   const delta=t.live-t.pre;
@@ -917,7 +927,7 @@ function liveOpportunityAssessment(m,stats){
   t.opportunityScore=Math.round(clamp(t.live*.48+upside*25+underdog*15+pressureScore*10,0,100));
   t.trailing=hasScore&&t.score<t.oppScore;
  }
- return{minute,hasScore,hs,as,homeStats,awayStats,available,live,teams:teamData,drawChance:live.D,pressure};
+ return{minute,hasScore,hs,as,homeStats,awayStats,available,live,teams:teamData,drawChance:live.D,pressure,hRed,aRed,redCardsKnown,redDiff,redCardImpact};
 }
 function integerOutcomePercents(p){
  const keys=["H","D","A"],raw=keys.map(k=>Math.max(0,Number(p?.[k]??1/3))*100),floors=raw.map(Math.floor);
@@ -937,23 +947,31 @@ function liveCard(m,index,mode="all"){
  if(a.minute!==null)reasons.push(`${a.minute} minutes elapsed; time remaining affects the estimate.`);else reasons.push("Match minute was not available, so a neutral time assumption is used.");
  if(hasScore)reasons.push(`Current score is ${a.hs}–${a.as}. Only teams drawing or behind are highlighted.`);else reasons.push("A usable score was not supplied by the live feed.");
  if(a.available)reasons.push(`${a.available} categories of live statistics were available to adjust the estimates.`);
+ if(a.redCardsKnown&&(a.hRed>0||a.aRed>0)){
+  const redSummary=[a.hRed>0?`${m.home}: ${a.hRed}`:"",a.aRed>0?`${m.away}: ${a.aRed}`:""].filter(Boolean).join("; ");
+  reasons.push(`Red-card adjustment applied (${redSummary}). The manpower effect is stronger earlier in the match and tapers as full time approaches.`);
+ }else reasons.push("No red-card count was available from the match statistics feed; no red-card adjustment was assumed.");
  reasons.push("The balanced opportunity score combines live win chance, movement from the pre-game estimate, underdog status and available match stats; it is a sorting aid, not a probability.");
  const teamCards=shownTeams.map(t=>{
    const drawing=hasScore&&t.score===t.oppScore,losing=hasScore&&t.score<t.oppScore;
    const label=drawing?"Currently drawing":losing?`Currently behind by ${t.oppScore-t.score}`:"Score unavailable";
    const winLabel=drawing?"Chance to win":"Comeback to win",drawLabel=drawing?"Chance of a draw":"Comeback to draw";
-   const explanation=t.delta>=10?`Win estimate up ${t.delta.toFixed(1)} points from pre-game.`:t.pre<25&&t.delta>0?"Pre-game underdog with an improved live outlook.":t.pressure>.08&&a.available?"Available live stats lean in this team's favour.":a.minute!==null&&a.minute>=80?"Late-game situation; limited time remains.":t.delta>0?"Live win estimate has improved from pre-game.":"Live estimate reflects score, time and available stats.";
+   const explanation=t.redAdvantage?"Numerical advantage after the opposition's red card; reflected in the live estimate.":t.red>0?`This team has ${t.red} red card${t.red===1?"":"s"}; the live estimate is adjusted down accordingly.`:t.delta>=10?`Win estimate up ${t.delta.toFixed(1)} points from pre-game.`:t.pre<25&&t.delta>0?"Pre-game underdog with an improved live outlook.":t.pressure>.08&&a.available?"Available live stats lean in this team's favour.":a.minute!==null&&a.minute>=80?"Late-game situation; limited time remains.":t.delta>0?"Live win estimate has improved from pre-game.":"Live estimate reflects score, time and available stats.";
    return `<div class="team-estimate"><div class="row between wrap"><strong>${esc(t.name)}</strong><span class="tag">${label}</span></div><div class="meta">Pre-game win: ${Math.round(t.pre)}% · ${t.delta>=0?"+":""}${t.delta.toFixed(1)} pts vs pre-game</div><div class="muted smalltext" style="margin-top:4px">${esc(explanation)}</div><div class="live-prob"><div class="live-percent-card win"><span>${winLabel}</span><strong>${t.live.toFixed(1)}%</strong><div class="live-probbar"><span style="width:${clamp(t.live,0,100)}%"></span></div><small>Estimated chance of this team winning</small></div><div class="live-percent-card draw"><span>${drawLabel}</span><strong>${a.live.D.toFixed(1)}%</strong><div class="live-probbar"><span style="width:${clamp(a.live.D,0,100)}%"></span></div><small>Estimated chance of the match finishing level</small></div></div></div>`;
  }).join("");
  const demoTag=`<span class="tag"><span class="live-pulse"></span>LIVE DATA</span>`;
+ const redEntries=[];
+ if(statNum(stats?.home?.redCards)!==null&&statNum(stats?.home?.redCards)>0)redEntries.push(`${esc(m.home)} (${statNum(stats.home.redCards)})`);
+ if(statNum(stats?.away?.redCards)!==null&&statNum(stats?.away?.redCards)>0)redEntries.push(`${esc(m.away)} (${statNum(stats.away.redCards)})`);
+ const redCardFlag=redEntries.length?`<span class="red-card-flag" role="status" aria-label="Red card reported"><i class="red-dot"></i> RED CARD · ${redEntries.join(" · ")}</span>`:"";
  const modeLabel=mode==="opportunity"?`OPPORTUNITY #${index+1}`:`LIVE MATCH #${index+1}`;
  return `<article class="live-card ${leader&&leader.opportunityScore>=60?"priority":""}">
-  <div class="row between wrap"><span class="live-rank">${modeLabel}</span>${demoTag}</div>
+  <div class="row between wrap"><span class="live-rank">${modeLabel}</span><div class="row wrap" style="gap:6px;justify-content:flex-end">${redCardFlag}${demoTag}</div></div>
   <div class="meta" style="margin-top:7px">${esc(m.league||"League")} · ${esc(m.statusName||"Live match")}</div>
   <div class="row between" style="margin:12px 0;gap:6px"><div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-game win: ${prePct.H}%</div></div><div style="text-align:center;min-width:82px"><div class="live-score">${scoreLine}</div><div class="live-minute">${esc(status)}</div></div><div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-game win: ${prePct.A}%</div></div></div>
   ${shownTeams.length?teamCards:`<div class="notice">No drawing or losing team matches the current situation filter.</div>`}
   <div class="row wrap"><span class="tag">Pre-game pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${a.available?`Stats: ${a.available}/5 indicators`:"Score/time only"}</span></div>
-  <details><summary>Match stats &amp; estimate evidence</summary><div class="explain"><div class="analytics-grid"><div class="analytics-card full"><h4>Live statistics · Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div><div class="analytics-card"><h4>Factors behind the estimate</h4><ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div><div class="analytics-card"><h4>Pre-game outcome probabilities</h4><div class="live-prob"><div class="live-percent-card"><span>Home win</span><strong>${prePct.H}%</strong></div><div class="live-percent-card"><span>Draw</span><strong>${prePct.D}%</strong></div><div class="live-percent-card"><span>Away win</span><strong>${prePct.A}%</strong></div></div><p class="analytics-note">Live chances are heuristic estimates and have not been calibrated against historical in-play outcomes.</p></div></div><div class="notice"><strong>Important:</strong> pre-game predictions are a baseline, not live market odds, so these estimates cannot establish betting value.</div></div></details>
+  <details><summary>Match stats &amp; estimate evidence</summary><div class="explain"><div class="analytics-grid"><div class="analytics-card full"><h4>Live statistics · Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div><div class="analytics-card"><h4>Factors behind the estimate</h4><ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div><div class="analytics-card"><h4>Pre-game outcome probabilities</h4><div class="live-prob"><div class="live-percent-card"><span>Home win</span><strong>${prePct.H}%</strong></div><div class="live-percent-card"><span>Draw</span><strong>${prePct.D}%</strong></div><div class="live-percent-card"><span>Away win</span><strong>${prePct.A}%</strong></div></div><p class="analytics-note">Live chances are heuristic estimates and have not been calibrated against historical in-play outcomes. Where the feed supplies red-card counts, the estimate adjusts the teams' relative win weights for the manpower difference, with a larger effect earlier in the match.</p></div></div><div class="notice"><strong>Important:</strong> pre-game predictions are a baseline, not live market odds, so these estimates cannot establish betting value.</div></div></details>
   <div class="live-source">ESPN scoreboard${stats?" and match-summary feed":" feed"} · ${state.liveLastUpdated?"updated "+state.liveLastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"update time unavailable"}</div>
  </article>`;
 }
