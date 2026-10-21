@@ -181,7 +181,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 </div>
 
 <main>
-<nav id="tabs">
+<nav id="tabs" aria-label="Main navigation">
  <button class="active" data-tab="fixtures">Fixtures</button>
  <button data-tab="live">Live Centre <span id="liveTabCount"></span></button>
  <button data-tab="accumulator">Accumulator <span id="accCount"></span></button>
@@ -200,7 +200,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
  </div>
  <div class="controls">
   <div><label for="league">Competition</label><select id="league">
-   <option value="all">All leagues</option><option value="eng.1">Premier League</option><option value="eng.2" selected>Championship</option><option value="eng.3">League One</option><option value="eng.4">League Two</option><option value="esp.1">La Liga</option><option value="ger.1">Bundesliga</option><option value="ita.1">Serie A</option><option value="fra.1">Ligue 1</option><option value="ned.1">Eredivisie</option><option value="uefa.champions">Champions League</option>
+   <option value="all">All leagues</option><option value="eng.1">Premier League</option><option value="eng.2" selected>Championship</option><option value="eng.3">League One</option><option value="eng.4">League Two</option><option value="esp.1">La Liga</option><option value="ger.1">Bundesliga</option><option value="ita.1">Serie A</option><option value="fra.1">Ligue 1</option><option value="uefa.champions">Champions League</option>
   </select></div>
   <div><label for="days">Fixture window</label><select id="days"><option value="today">Today</option><option value="3">Next 3 days</option><option value="7">Next 7 days</option><option value="14" selected>Next 14 days</option><option value="30">Next 30 days</select></div>
   <div><label for="sort">Sort by</label><select id="sort"><option value="date">Kick-off date</option><option value="confidence">Confidence</option></select></div>
@@ -259,7 +259,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
  <div class="controls">
   <div><label for="historyDays">Look back</label><select id="historyDays"><option value="7">Last 7 days</option><option value="14" selected>Last 14 days</option></select></div>
   <div><label for="historyLeague">Competition</label><select id="historyLeague">
-   <option value="all">All leagues</option><option value="eng.1">Premier League</option><option value="eng.2">Championship</option><option value="eng.3">League One</option><option value="eng.4">League Two</option><option value="esp.1">La Liga</option><option value="ger.1">Bundesliga</option><option value="ita.1">Serie A</option><option value="fra.1">Ligue 1</option><option value="ned.1">Eredivisie</option><option value="uefa.champions">Champions League</option>
+   <option value="all">All leagues</option><option value="eng.1">Premier League</option><option value="eng.2">Championship</option><option value="eng.3">League One</option><option value="eng.4">League Two</option><option value="esp.1">La Liga</option><option value="ger.1">Bundesliga</option><option value="ita.1">Serie A</option><option value="fra.1">Ligue 1</option><option value="uefa.champions">Champions League</option>
   </select></div>
  </div>
  <div id="historyStats"></div><div id="historyList"></div>
@@ -294,7 +294,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 
 const LEAGUES={
  "eng.1":"Premier League","eng.2":"Championship","eng.3":"League One","eng.4":"League Two",
- "esp.1":"La Liga","ger.1":"Bundesliga","ita.1":"Serie A","fra.1":"Ligue 1","ned.1":"Eredivisie","uefa.champions":"Champions League"
+ "esp.1":"La Liga","ger.1":"Bundesliga","ita.1":"Serie A","fra.1":"Ligue 1","uefa.champions":"Champions League"
 };
 const MODELS=[
  {name:"A — Stable",short:"A",weights:[.60,.30,.10]},
@@ -353,9 +353,25 @@ async function fetchLeague(id,n=6,progress=()=>{}){
  const unique=new Map();all.forEach(m=>unique.set(eventId(m),m));return[...unique.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
 }
 async function fetchAllLeagues(n=6,progress=()=>{}){
- const all=[],errors=[],ids=Object.keys(LEAGUES);
- for(let i=0;i<ids.length;i++){progress(i,ids.length,LEAGUES[ids[i]]);try{const rows=await fetchLeague(ids[i],n);if(rows.length)all.push(...rows);else errors.push(LEAGUES[ids[i]])}catch(e){errors.push(LEAGUES[ids[i]])}}
- const unique=new Map();all.forEach(m=>unique.set(eventId(m),m));
+ const ids=Object.keys(LEAGUES),all=[],errors=[];
+ let nextIndex=0,completed=0;
+ // Fetch a small number of competitions concurrently to reduce wait time
+ // without flooding the public scoreboard API with requests.
+ async function worker(){
+  while(nextIndex<ids.length){
+   const index=nextIndex++,id=ids[index],name=LEAGUES[id];
+   progress(completed,ids.length,name);
+   try{
+    const rows=await fetchLeague(id,n);
+    if(rows.length)all.push(...rows);else errors.push(name);
+   }catch(error){errors.push(name);console.warn(`Could not load ${name}:`,error.message)}
+   completed++;
+   progress(completed,ids.length,name);
+  }
+ }
+ await Promise.all(Array.from({length:Math.min(3,ids.length)},()=>worker()));
+ const unique=new Map();
+ all.forEach(match=>unique.set(eventId(match),match));
  return{matches:[...unique.values()].sort((a,b)=>new Date(a.date)-new Date(b.date)),errors};
 }
 function historyForTeam(previous,key){
@@ -619,7 +635,7 @@ function statValue(stats,names){
  return null;
 }
 function extractStats(summary,m){
- const comp=summary?.boxscore?.players||[],teams=summary?.boxscore?.teams||summary?.boxscore?.statistics||[];
+ const teams=summary?.boxscore?.teams||summary?.boxscore?.statistics||[];
  const result={home:{},away:{}};
  const competitors=summary?.header?.competitions?.[0]?.competitors||m.competitors||[];
  const homeId=String(m.homeId),awayId=String(m.awayId);
