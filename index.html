@@ -828,10 +828,11 @@ function getLiveMinute(m){
  return m.state==="in"?"In progress":"Live";
 }
 function getElapsedLiveMinute(m){
- const clockMatch=String(m.clock||"").match(/(\d{1,3})(?::(\d{2}))?/);
  const status=String(m.statusName||"");
- const added=status.match(/(\d{1,3})\s*\+\s*(\d{1,2})/);
+ // ESPN may format added time as 90'+7, 90′+7, or 90 + 7. Accept the apostrophe variants before falling back to the display clock.
+ const added=status.match(/(\d{1,3})\s*['′’]?\s*\+\s*(\d{1,2})/);
  if(added)return clamp(Number(added[1])+Number(added[2]),0,135);
+ const clockMatch=String(m.clock||"").match(/(\d{1,3})(?::(\d{2}))?/);
  if(clockMatch)return clamp(Number(clockMatch[1])+(Number(clockMatch[2]||0)/60),0,135);
  const statusMinute=status.match(/(\d{1,3})/);
  return statusMinute?clamp(Number(statusMinute[1]),0,135):null;
@@ -842,10 +843,15 @@ function poissonProbabilities(lambda,maxGoals=8){
  const total=out.reduce((a,b)=>a+b,0)||1;
  return out.map(v=>v/total);
 }
-function scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redDiff,redCardsKnown){
- // Approximate goals still to come. At 90 minutes, assume about six minutes of stoppage time remain unless the feed gives a later minute.
- const endMinute=96;
- const remaining=minute===null?0.5:clamp((endMinute-minute)/90,0,1);
+function scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redDiff,redCardsKnown,m){
+ // Model only the goals realistically left to score. If the feed explicitly reports added time (e.g. 90'+7), assume roughly one further minute after that displayed minute; otherwise use a six-minute default, with very little time left once the clock has passed 96.
+ const status=String(m?.statusName||"");
+ const added=status.match(/(\d{1,3})\s*['′’]?\s*\+\s*(\d{1,2})/);
+ let endMinute=96;
+ if(added)endMinute=Math.max(96,Number(added[1])+Number(added[2])+1);
+ else if(minute!==null&&minute>=96)endMinute=minute+0.5;
+ const remainingMinutes=minute===null?45:clamp(endMinute-minute,0,90);
+ const remaining=remainingMinutes/90;
  const totalRemainingGoals=2.55*remaining;
  // Pre-game strength, live pressure and red cards affect how remaining goals are split, not whether an already-level score is treated as a likely draw.
  const preShare=homeProb/Math.max(.001,homeProb+awayProb);
@@ -859,7 +865,7 @@ function scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redD
   if(diff>0)H+=prob;else if(diff===0)D+=prob;else A+=prob;
  }
  const total=H+D+A||1;
- return {H:H/total*100,D:D/total*100,A:A/total*100,remainingMinutes:Math.max(0,endMinute-(minute??51)),homeLambda,awayLambda};
+ return {H:H/total*100,D:D/total*100,A:A/total*100,remainingMinutes,homeLambda,awayLambda};
 }
 function liveAssessment(m,stats){
  const a=liveOpportunityAssessment(m,stats);
@@ -877,7 +883,7 @@ function liveAssessment(m,stats){
  if(a.available)reasons.push(`${a.available} categories of live statistics are available and can influence the distribution of remaining goals.`);
  if(!a.available)risks.push("Detailed in-play statistics are unavailable; the estimate relies mainly on score, time and pre-game strength.");
  if(a.minute===null)risks.push("Match minute is uncertain, so the remaining-time estimate is less reliable.");
- if(a.minute!==null&&a.minute>=90)reasons.push("At 90 minutes, the model assumes a short stoppage-time window; win chances are low when the score is level or the team is trailing.");
+ if(a.minute!==null&&a.minute>=90)reasons.push(`Late-game timing is applied strictly: approximately ${Math.max(0,Math.round(a.live.remainingMinutes*10)/10)} expected minutes remain in the model, so a trailing team has very little time to equalise or win.`);
  return{trailingSide,team,opponent,deficit,winChance:Math.round(winChance*10)/10,drawChance:Math.round(drawChance*10)/10,minute:a.minute,available:a.available,reasons,risks,homeStats,awayStats,homeProb:a.homeProb,awayProb:a.awayProb,drawProb:a.preDraw};
 }
 function liveStatRow(label,h,a,suffix=""){
@@ -915,7 +921,7 @@ function liveOpportunityAssessment(m,stats){
  const preDraw=drawProb;
  let live;
  if(hasScore){
-  live=scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redCardsKnown?redDiff:0,redCardsKnown);
+  live=scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redCardsKnown?redDiff:0,redCardsKnown,m);
  }else{
   // Without a usable score, retain a conservative pre-game baseline and only apply small pressure/manpower adjustments.
   let homeWeight=homeProb*Math.exp(pressure*.25+redCardImpact/2),awayWeight=awayProb*Math.exp(-pressure*.25-redCardImpact/2),drawWeight=drawProb;
