@@ -246,12 +246,12 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
   <div><label for="days">Fixture window</label><select id="days"><option value="today">Today</option><option value="3">Next 3 days</option><option value="7">Next 7 days</option><option value="14" selected>Next 14 days</option><option value="30">Next 30 days</select></div>
   <div><label for="sort">Sort by</label><select id="sort"><option value="date">Kick-off date</option><option value="confidence">Confidence</option></select></div>
  </div>
- <div class="row wrap" style="margin-bottom:12px"><button class="btn" id="load">Load / refresh predictions</button><button class="btn secondary" id="top10">Show Top 10 picks</button></div>
+ <div class="row wrap" style="margin-bottom:12px"><button class="btn" id="load">Load / refresh predictions</button><button class="btn secondary" id="top10">Show Top 10 picks</button><button class="btn secondary" id="goalThreats">Show Goal Threats</button></div>
  <div class="notice">Predictions use earlier completed league results. Expected goals are averages, not exact-score guarantees. Displayed scores are rounded estimates adjusted to agree with the predicted result. Confidence is an indicative model rating, not a guarantee. Probabilities are estimates, not betting advice.</div>
  <div class="confidence-legend">
   <span class="tag confidence-high">🟢 Confidence 9–10</span><span class="tag confidence-medium">🟠 Confidence 7–8</span><span class="tag confidence-low">🔴 Confidence 0–6</span>
  </div>
- <div id="topbox"></div><div id="fixtureStatus" class="muted smalltext"></div><div id="fixtureList"><div class="empty">Tap “Load / refresh predictions” to begin.</div></div>
+ <div id="topbox"></div><div id="goalThreatBox"></div><div id="fixtureStatus" class="muted smalltext"></div><div id="fixtureList"><div class="empty">Tap “Load / refresh predictions” to begin.</div></div>
 </section>
 
 <section id="live" hidden>
@@ -357,7 +357,7 @@ const MODELS=[
 ];
 const WINDOWS=[15,10,5],$=id=>document.getElementById(id);
 const state={
- matches:[],loaded:false,loading:false,topMode:false,
+ matches:[],loaded:false,loading:false,topMode:false,goalThreatMode:false,
  acc:readStore("fp_acc",[]),history:readStore("fp_prediction_history",[]),
  lastTest:null,activeIndex:1,mode:"manual",manualIndex:1,minSample:100,
  liveMatches:[],liveStats:{},liveHistory:readStore("fp_live_prediction_history",[]),liveFilter:"all",liveLeagueFilter:"all",liveSituationFilter:"all",liveLoading:false,liveLastUpdated:null
@@ -588,10 +588,30 @@ function renderFixtures(){
  $("fixtureStatus").textContent=state.loaded?`${list.length} upcoming fixtures · ${state.matches.filter(isFinished).length} completed results loaded`:"";
  $("fixtureList").innerHTML=list.length?list.map(matchCard).join(""):`<div class="empty">${state.loaded?"No upcoming fixtures found. Try another league or longer window.":"Load fixtures to see predictions."}</div>`;
  if(state.topMode)renderTop10();
+ if(state.goalThreatMode)renderGoalThreats();
 }
 function renderTop10(){
  const all=upcoming().sort((a,b)=>b.probs[b.prediction]-a.probs[a.prediction]).slice(0,10);
  $("topbox").innerHTML=`<h2>Top 10 picks</h2><p class="muted smalltext">Ranked by the probability of the model's leading outcome. Higher probability does not mean a guaranteed result.</p><div class="confidence-legend"><span class="tag confidence-high">🟢 9–10</span><span class="tag confidence-medium">🟠 7–8</span><span class="tag confidence-low">🔴 0–6</span></div>`+all.map((m,i)=>{const added=state.acc.some(x=>x.id===eventId(m));return`<div class="pick"><div class="top-pick-header"><strong class="top-pick-teams">${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong><div class="top-pick-confidence">${confidenceBadge(m.confidence)}</div></div><div class="meta" style="margin-top:6px">${esc(m.league)} · ${esc(fmtDate(m.date))}</div><div class="row wrap" style="margin:10px 0"><span class="tag">Pick: ${outcomeName(m.prediction)}</span><span class="tag">${Math.round(m.probs[m.prediction]*100)}% probability</span></div><div class="meta" style="margin-bottom:9px">Predicted score: ${esc(m.predictedScore)}</div><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(eventId(m))}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>`}).join("")||`<div class="empty">No upcoming matches found.</div>`;
+}
+function goalCountProbability(lambda, minimumGoals){
+ let below=0;
+ for(let k=0;k<minimumGoals;k++)below+=poisson(k,lambda);
+ return Math.max(0,Math.min(1,1-below));
+}
+function renderGoalThreats(){
+ const threats=[];
+ for(const m of upcoming()){
+  for(const side of [{team:m.home,opponent:m.away,lambda:m.homeLambda,venue:"Home"},{team:m.away,opponent:m.home,lambda:m.awayLambda,venue:"Away"}]){
+   if(!Number.isFinite(side.lambda))continue;
+   const p2=goalCountProbability(side.lambda,2),p3=goalCountProbability(side.lambda,3),p4=goalCountProbability(side.lambda,4);
+   threats.push({...side,match:m,p2,p3,p4});
+  }
+ }
+ threats.sort((a,b)=>b.p3-a.p3||b.p2-a.p2);
+ const shown=threats.filter(x=>x.p2>=0.25).slice(0,15);
+ $("goalThreatBox").innerHTML=`<h2>Goal Threats</h2><p class="muted smalltext">Teams are ranked by their modelled chance of scoring 3+ goals. Percentages come from a Poisson scoring estimate using expected goals; they are indicative, not guarantees.</p>`+
+ (shown.length?shown.map((x,i)=>`<div class="pick"><div class="top-pick-header"><strong class="top-pick-teams">${i+1}. ${esc(x.team)} <span class="muted smalltext">(${x.venue})</span></strong><span class="tag">Expected goals: ${x.lambda.toFixed(2)}</span></div><div class="meta" style="margin-top:5px">${esc(x.match.league)} · ${esc(fmtDate(x.match.date))}<br>Opponent: ${esc(x.opponent)}</div><div class="statgrid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px"><div class="stat"><span class="muted smalltext">Score 2+</span><strong>${(x.p2*100).toFixed(1)}%</strong></div><div class="stat"><span class="muted smalltext">Score 3+</span><strong>${(x.p3*100).toFixed(1)}%</strong></div><div class="stat"><span class="muted smalltext">Score 4+</span><strong>${(x.p4*100).toFixed(1)}%</strong></div></div></div>`).join(""):`<div class="empty">No strong goal threats found in the current fixture window. Try a longer date range or another competition.</div>`);
 }
 function renderAccumulator(){
  $("accCount").textContent=state.acc.length?`(${state.acc.length})`:"";$("accTotal").textContent=state.acc.length;
@@ -1032,6 +1052,7 @@ initLeagueSelects();
 document.querySelectorAll("nav button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
 $("load").addEventListener("click",loadData);$("league").addEventListener("change",renderFixtures);$("days").addEventListener("change",renderFixtures);$("sort").addEventListener("change",renderFixtures);
 $("top10").addEventListener("click",()=>{state.topMode=!state.topMode;$("top10").textContent=state.topMode?"Hide Top 10 picks":"Show Top 10 picks";if(state.topMode)renderTop10();else $("topbox").innerHTML=""});
+$("goalThreats").addEventListener("click",()=>{state.goalThreatMode=!state.goalThreatMode;$("goalThreats").textContent=state.goalThreatMode?"Hide Goal Threats":"Show Goal Threats";if(state.goalThreatMode)renderGoalThreats();else $("goalThreatBox").innerHTML=""});
 $("clearAcc").addEventListener("click",()=>{if(confirm("Clear all accumulator selections?")){state.acc=[];store("fp_acc",state.acc);renderAccumulator();renderFixtures()}});
 $("historyDays").addEventListener("change",renderHistory);$("historyLeague").addEventListener("change",renderHistory);$("refreshHistory").addEventListener("click",()=>{if(!state.loading)loadData()});
 $("saveSettings").addEventListener("click",saveSettings);$("runTest").addEventListener("click",doTest);
