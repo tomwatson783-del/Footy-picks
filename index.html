@@ -135,10 +135,10 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 .live-score{font-size:30px;font-weight:900;letter-spacing:-1px;white-space:nowrap}
 .live-team{font-size:14px;font-weight:800;overflow-wrap:anywhere}
 .live-minute{font-size:11px;color:var(--amber);font-weight:800}
-.live-prob{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:12px 0}
+.live-prob{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
 .live-prob>div{background:#142033;border-radius:9px;padding:9px 5px;text-align:center}
-.live-prob strong{display:block;font-size:18px}
-.live-prob span{font-size:10px;color:var(--muted)}
+.live-prob strong{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.live-prob span{font-size:11px;color:var(--muted)}\n .live-percent-card{background:#142033;border:1px solid var(--border);border-radius:11px;padding:12px;min-width:0}\n .live-percent-card.win{border-color:#347c60}\n .live-percent-card.draw{border-color:#98732a}\n .live-percent-card small{display:block;color:var(--muted);font-size:10px;margin-top:4px}\n .live-probbar{height:6px;background:#34445a;border-radius:8px;overflow:hidden;margin-top:8px}\n .live-probbar span{display:block;height:100%;background:var(--green)}\n .live-percent-card.draw .live-probbar span{background:var(--amber)}
 .opportunity{border-radius:10px;padding:10px;background:#164b35;color:#c8ffe1;margin:10px 0;font-size:13px}
 .opportunity.draw{background:#59421a;color:#ffebbb}
 .opportunity.caution{background:#572832;color:#ffd5da}
@@ -231,28 +231,22 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
    <div><div class="muted smalltext">FOOTY PICKS · MATCH INTELLIGENCE</div><h2 style="margin:4px 0">Live Centre</h2></div>
    <span class="tag"><span class="live-pulse"></span><span id="liveStatus">Connecting…</span></span>
   </div>
-  <p class="muted smalltext">Automatically ranks live scenarios using the pre-match model, scoreline, match time and available in-game stats. Expand any match for the evidence.</p>
+  <p class="muted smalltext">Shows teams currently behind, ranked by estimated comeback-to-win chance. Both percentages use the pre-match model, score, match time and available in-play statistics.</p>
   <div class="row between wrap"><span id="liveUpdated" class="smalltext muted">Waiting for data…</span><button id="liveRefresh" class="btn small secondary">Refresh live data</button></div>
  </div>
- <div class="notice"><strong>How to use this board:</strong> rankings are evidence-based watchlist signals, not guaranteed outcomes. A comeback signal is not automatically a value bet. Live odds are not supplied by this scoreboard feed, so this app cannot confirm bookmaker value. Missing stats are never fabricated.</div>
+ <div class="notice"><strong>Important:</strong> comeback percentages are heuristic estimates, not calibrated probabilities or betting advice. The feed does not provide bookmaker odds, so it cannot establish value. Missing stats are never fabricated.</div>
  <div class="live-filter" id="liveFilters">
-  <button class="active" data-filter="all">All scenarios</button>
-  <button data-filter="comeback">Comebacks</button>
-  <button data-filter="draw">Draw watch</button>
-  <button data-filter="favourite">Favourite to win</button>
+  <button class="active" data-filter="all">All trailing teams</button>
+  <button data-filter="win">Comeback to win</button>
+  <button data-filter="draw">Comeback to draw</button>
  </div>
  <div id="liveSummary" class="statgrid"></div>
  <div id="liveList"><div class="empty">Loading live matches…</div></div>
  <div class="panel">
-  <h3>Understanding the rankings</h3>
-  <div class="signal-list">
-   <div class="signal"><span class="signal-icon">🟢</span><span><strong>Stronger signal:</strong> several available indicators support the scenario, such as a strong pre-match forecast plus a close score and positive live pressure.</span></div>
-   <div class="signal"><span class="signal-icon">🟠</span><span><strong>Watchlist:</strong> some evidence supports the scenario, but there are meaningful unknowns or counter-signals.</span></div>
-   <div class="signal"><span class="signal-icon">🔴</span><span><strong>Weak or limited:</strong> available evidence is not convincing, or important live data is missing.</span></div>
+   <h3>How the estimates work</h3>
+   <p class="analytics-note">The two percentages are heuristic estimates based on the trailing team's pre-match win/draw probabilities, current deficit, match time and available shots, shots on target, xG and red cards. They have not been calibrated against historical in-play outcomes. Treat them as a way to sort scenarios for further review, not as reliable probabilities or evidence of betting value.</p>
   </div>
-  <p class="analytics-note">The ranking is a heuristic, not a statistically calibrated in-play probability. The existing model is trained on pre-match team results, not historical in-play situations. Odds, red cards and detailed match stats are only used when a source actually provides them.</p>
- </div>
-</section>
+ </section>
 
 <section id="accumulator" hidden>
  <h2>Your accumulator</h2><p class="muted">Save individual match selections here. This is not a bet or bookmaker connection.</p>
@@ -764,54 +758,47 @@ function getLiveMinute(m){
  return m.state==="in"?"In progress":"Live";
 }
 function liveAssessment(m,stats){
- const elapsed=parseInt(String(m.clock||"").split(":")[0],10),minute=Number.isFinite(elapsed)?elapsed:null;
- const hs=Number(m.homeScore),as=Number(m.awayScore),behindHome=hs<as,behindAway=as<hs,draw=hs===as;
- const p=m.probs||{H:1/3,D:1/3,A:1/3},homeProb=Number(p.H??1/3),awayProb=Number(p.A??1/3);
- const homeStats=stats?.home||{},awayStats=stats?.away||{};
- const hShots=statNum(homeStats.shots),aShots=statNum(awayStats.shots),hTarget=statNum(homeStats.shotsOnTarget),aTarget=statNum(awayStats.shotsOnTarget);
- const hPoss=statNum(homeStats.possession),aPoss=statNum(awayStats.possession);
- const hXg=statNum(homeStats.xg),aXg=statNum(awayStats.xg),hRed=statNum(homeStats.redCards),aRed=statNum(awayStats.redCards);
- let hPressure=0,aPressure=0,available=0;
- if(hShots!==null&&aShots!==null){available++;hPressure+=(hShots-aShots)*1.5;aPressure+=(aShots-hShots)*1.5}
- if(hTarget!==null&&aTarget!==null){available++;hPressure+=(hTarget-aTarget)*3;aPressure+=(aTarget-hTarget)*3}
- if(hPoss!==null&&aPoss!==null){available++;hPressure+=(hPoss-aPoss)*.12;aPressure+=(aPoss-hPoss)*.12}
- if(hXg!==null&&aXg!==null){available++;hPressure+=(hXg-aXg)*14;aPressure+=(aXg-hXg)*14}
- if(hRed!==null&&aRed!==null){available++;hPressure+=(aRed-hRed)*7;aPressure+=(hRed-aRed)*7}
- const hEvidence=clamp(50+(homeProb-.33)*70+hPressure,0,100);
- const aEvidence=clamp(50+(awayProb-.33)*70+aPressure,0,100);
- let type="favourite",side=homeProb>=awayProb?"home":"away",label="Pre-match favourite to win";
- if(behindHome||behindAway){side=behindHome?"home":"away";type="comeback";label=`${side==="home"?m.home:m.away} comeback watch`}
- else if(draw){type="draw";label="Draw / winner watch"}
- const trailingSide=behindHome?"home":behindAway?"away":null;
- let score=trailingSide==="home"?hEvidence:trailingSide==="away"?aEvidence:Math.max(hEvidence,aEvidence);
- let strength=score>=68?"Stronger watchlist signal":score>=53?"Worth monitoring":"Limited evidence";
- let level=score>=68?"good":score>=53?"warn":"bad";
- if(!available){score=clamp(50+(trailingSide==="home"?homeProb:trailingSide==="away"?awayProb:Math.max(homeProb,awayProb)-.33)*45,0,100);strength="Pre-match-only signal";level="neutral"}
- const reasons=[],risks=[];
- if(trailingSide){
-  const prior=trailingSide==="home"?homeProb:awayProb;
-  if(prior>=.42)reasons.push("The trailing side had a comparatively strong pre-match win probability.");
-  else risks.push("The pre-match model did not strongly favour the trailing side.");
-  const shots=trailingSide==="home"?hShots:aShots,oppShots=trailingSide==="home"?aShots:hShots;
-  const target=trailingSide==="home"?hTarget:aTarget,oppTarget=trailingSide==="home"?aTarget:hTarget;
-  if(shots!==null&&oppShots!==null){if(shots>oppShots)reasons.push(`The trailing side has more shots (${shots} vs ${oppShots}).`);else risks.push(`The trailing side does not lead total shots (${shots} vs ${oppShots}).`)}
-  if(target!==null&&oppTarget!==null){if(target>oppTarget)reasons.push(`Shots on target favour the trailing side (${target} vs ${oppTarget}).`);else risks.push(`Shots on target do not favour the trailing side (${target} vs ${oppTarget}).`)}
-  const xg=trailingSide==="home"?hXg:aXg,oppXg=trailingSide==="home"?aXg:hXg;
-  if(xg!==null&&oppXg!==null){if(xg>oppXg)reasons.push(`Expected goals favour the trailing side (${xg} vs ${oppXg}), suggesting better chance quality.`);else risks.push(`Expected goals do not favour the trailing side (${xg} vs ${oppXg}).`)}
-  const reds=trailingSide==="home"?hRed:aRed,oppReds=trailingSide==="home"?aRed:hRed;
-  if(reds!==null&&oppReds!==null&&oppReds>reds)reasons.push("The opposition has more red cards, which may create a numerical advantage.");
-  if(reds!==null&&reds>0)risks.push("The trailing side has at least one red card, a significant comeback obstacle.");
-  if(minute!==null&&minute>=75)risks.push("Little regulation time remains; stoppage time and match status matter.");
-  else if(minute!==null&&minute<=60)reasons.push("There is still meaningful regulation time remaining.");
- }else{
-  reasons.push(`Pre-match model favours ${side==="home"?m.home:m.away} (${Math.round((side==="home"?homeProb:awayProb)*100)}% win estimate).`);
-  if(draw)reasons.push("The score is level, so a win remains possible for either team.");
- }
- if(!available)risks.push("Detailed live stats were not supplied; this is based mainly on pre-match probabilities and score/time.");
- if(minute===null)risks.push("The live minute could not be confirmed from the feed.");
- if(!reasons.length)reasons.push("No strong supporting live-stat signal could be established from the available feed.");
- if(!risks.length)risks.push("A small number of statistics cannot establish the true chance of a comeback.");
- return{type,side,label,score:Math.round(score),strength,level,reasons,risks,available,minute,homeStats,awayStats,homeProb,awayProb,drawProb:p.D??.33};
+  const elapsed=parseInt(String(m.clock||"").split(":")[0],10);
+  const statusMinute=String(m.statusName||"").match(/(\d{1,3})(?:\s*\+\s*\d+)?['’]?/);
+  const minute=Number.isFinite(elapsed)?clamp(elapsed,0,130):statusMinute?clamp(Number(statusMinute[1]),0,130):null;
+  const hasScore=validScore(m),hs=hasScore?Number(m.homeScore):NaN,as=hasScore?Number(m.awayScore):NaN;
+  const behindHome=hasScore&&hs<as,behindAway=hasScore&&as<hs;
+  const trailingSide=behindHome?"home":behindAway?"away":null,p=m.probs||{H:1/3,D:1/3,A:1/3};
+  const homeProb=Number(p.H??1/3),awayProb=Number(p.A??1/3),drawProb=Number(p.D??1/3);
+  const homeStats=stats?.home||{},awayStats=stats?.away||{};
+  const hShots=statNum(homeStats.shots),aShots=statNum(awayStats.shots),hTarget=statNum(homeStats.shotsOnTarget),aTarget=statNum(awayStats.shotsOnTarget);
+  const hPoss=statNum(homeStats.possession),aPoss=statNum(awayStats.possession),hXg=statNum(homeStats.xg),aXg=statNum(awayStats.xg),hRed=statNum(homeStats.redCards),aRed=statNum(awayStats.redCards);
+  let hPressure=0,aPressure=0,available=0;
+  if(hShots!==null&&aShots!==null){available++;hPressure+=(hShots-aShots)*1.1;aPressure+=(aShots-hShots)*1.1}
+  if(hTarget!==null&&aTarget!==null){available++;hPressure+=(hTarget-aTarget)*3;aPressure+=(aTarget-hTarget)*3}
+  if(hPoss!==null&&aPoss!==null){available++;hPressure+=(hPoss-aPoss)*.08;aPressure+=(aPoss-hPoss)*.08}
+  if(hXg!==null&&aXg!==null){available++;hPressure+=(hXg-aXg)*18;aPressure+=(aXg-hXg)*18}
+  if(hRed!==null&&aRed!==null){available++;hPressure+=(aRed-hRed)*8;aPressure+=(hRed-aRed)*8}
+  if(!trailingSide)return{trailingSide:null,winChance:0,drawChance:0,minute,available,reasons:["Only teams currently behind are included in comeback rankings."],risks:[],homeStats,awayStats,homeProb,awayProb,drawProb};
+  const isHome=trailingSide==="home",team=isHome?m.home:m.away,opponent=isHome?m.away:m.home;
+  const ownScore=isHome?hs:as,oppScore=isHome?as:hs,deficit=oppScore-ownScore,priorWin=isHome?homeProb:awayProb;
+  const ownPressure=isHome?hPressure:aPressure,oppPressure=isHome?aPressure:hPressure;
+  const pressureDelta=clamp((ownPressure-oppPressure)/100,-.35,.35),remaining=minute===null?.55:clamp((96-minute)/90,0,1);
+  const deficitWin=deficit===1?.72:deficit===2?.28:deficit===3?.09:.025,deficitDraw=deficit===1?1:deficit===2?.34:deficit===3?.10:.025;
+  const timeWin=.08+.95*Math.pow(remaining,1.35),timeDraw=.10+.90*Math.pow(remaining,1.2);
+  const redAdvantage=isHome?(aRed??0)-(hRed??0):(hRed??0)-(aRed??0);
+  const redFactor=clamp(1+redAdvantage*.12,.72,1.25),pressureFactor=clamp(1+pressureDelta,.65,1.35);
+  let winChance=100*priorWin*deficitWin*timeWin*pressureFactor*redFactor;
+  let drawChance=100*(drawProb*.62+priorWin*.30)*deficitDraw*timeDraw*pressureFactor*redFactor;
+  if(minute!==null&&minute>=85){winChance*=.55;drawChance*=.62}
+  if(minute!==null&&minute>=90){winChance*=.45;drawChance*=.50}
+  winChance=clamp(winChance,0,65);drawChance=clamp(drawChance,0,70);
+  const reasons=[`${team} had a ${Math.round(priorWin*100)}% pre-match win estimate and is currently ${deficit} goal${deficit===1?"":"s"} behind.`],risks=[];
+  if(minute!==null)reasons.push(`${minute} minutes elapsed; the estimate discounts scenarios as time runs out.`);
+  if(hShots!==null&&aShots!==null){if(isHome?hShots>aShots:aShots>hShots)reasons.push(`${team} leads total shots (${isHome?hShots:aShots} vs ${isHome?aShots:hShots}).`);else risks.push(`${team} does not lead total shots (${isHome?hShots:aShots} vs ${isHome?aShots:hShots}).`)}
+  if(hTarget!==null&&aTarget!==null){if(isHome?hTarget>aTarget:aTarget>hTarget)reasons.push(`Shots on target favour ${team} (${isHome?hTarget:aTarget} vs ${isHome?aTarget:hTarget}).`);else risks.push(`Shots on target do not favour ${team} (${isHome?hTarget:aTarget} vs ${isHome?aTarget:hTarget}).`)}
+  if(hXg!==null&&aXg!==null){if(isHome?hXg>aXg:aXg>hXg)reasons.push(`xG favours ${team} (${(isHome?hXg:aXg).toFixed(2)} vs ${(isHome?aXg:hXg).toFixed(2)}).`);else risks.push(`xG does not favour ${team} (${(isHome?hXg:aXg).toFixed(2)} vs ${isHome?aXg:hXg}).`)}
+  const ownRed=isHome?hRed:aRed,oppRed=isHome?aRed:hRed;
+  if(ownRed!==null&&oppRed!==null&&oppRed>ownRed)reasons.push(`${opponent} has more red cards, which may help ${team}.`);
+  if(ownRed!==null&&ownRed>0)risks.push(`${team} has ${ownRed} red card${ownRed===1?"":"s"}.`);
+  if(!available)risks.push("Detailed in-play statistics are unavailable; estimates rely on pre-match probabilities, score and time.");
+  if(minute===null)risks.push("Match minute is uncertain, so the time adjustment is less reliable.");
+  return{trailingSide,team,opponent,deficit,winChance:Math.round(winChance*10)/10,drawChance:Math.round(drawChance*10)/10,minute,available,reasons,risks,homeStats,awayStats,homeProb,awayProb,drawProb};
 }
 function liveStatRow(label,h,a,suffix=""){
  const hn=statNum(h),an=statNum(a),max=Math.max(hn??0,an??0,1),hp=hn===null?0:hn/max*100,ap=an===null?0:an/max*100;
@@ -826,40 +813,41 @@ function liveStatsHtml(m,stats){
  return rows.length?rows.join(""):`<div class="notice">The source returned no usable detailed statistics for this match. Score and status are available, but the stats breakdown is limited.</div>`;
 }
 function liveCard(m,index,isDemo=false){
- const id=eventId(m),stats=state.liveStats[id],assess=liveAssessment(m,stats),hasScore=validScore(m);
- const homeScore=hasScore?m.homeScore:"—",awayScore=hasScore?m.awayScore:"—";
- const probs=m.probs||{H:1/3,D:1/3,A:1/3},status=isDemo?"FICTIONAL EXAMPLE":getLiveMinute(m);
- const top=assess.level==="good";
- const cls=isDemo?"demo":top?"priority":"";
- const opportunityClass=assess.type==="comeback"?"":assess.type==="favourite"?"neutral":"draw";
- const reasons=assess.reasons.map(x=>`<li>${esc(x)}</li>`).join(""),risks=assess.risks.map(x=>`<li>${esc(x)}</li>`).join("");
- const demoTag=isDemo?`<span class="tag warn">DEMO · NOT REAL</span>`:`<span class="tag"><span class="live-pulse"></span>LIVE DATA</span>`;
- return`<article class="live-card ${cls}">
- <div class="row between wrap"><span class="live-rank">${isDemo?"EXAMPLE MATCH":`OPPORTUNITY RANK #${index+1}`}</span>${demoTag}</div>
- <div class="meta" style="margin-top:7px">${esc(m.league||"Example league")} · ${esc(m.statusName||"Live match scenario")}</div>
- <div class="row between" style="margin:12px 0;gap:6px">
-  <div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-match home win: ${Math.round(probs.H*100)}%</div></div>
-  <div style="text-align:center;min-width:82px"><div class="live-score">${homeScore}–${awayScore}</div><div class="live-minute">${esc(status)}</div></div>
-  <div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-match away win: ${Math.round(probs.A*100)}%</div></div>
- </div>
- <div class="live-prob"><div><span>Home win</span><strong>${Math.round(probs.H*100)}%</strong></div><div><span>Draw</span><strong>${Math.round(probs.D*100)}%</strong></div><div><span>Away win</span><strong>${Math.round(probs.A*100)}%</strong></div></div>
- <div class="opportunity ${opportunityClass}"><div class="opportunity-title">${esc(assess.label)}</div><div>${esc(assess.strength)} · Evidence score ${assess.score}/100</div><div class="progress"><span style="width:${assess.score}%;background:${assess.level==="good"?"var(--green)":assess.level==="warn"?"var(--amber)":"var(--red)"}"></span></div></div>
- <div class="row wrap"><span class="tag">Pre-match pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${assess.available?"Live stats available":"Limited live stats"}</span></div>
- <details><summary>Expand match evidence &amp; visual breakdown</summary><div class="explain">
-  <div class="analytics-grid">
-   <div class="analytics-card full"><h4>Live statistics · Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div>
-   <div class="analytics-card"><h4>Evidence supporting the scenario</h4><ul>${reasons}</ul></div>
-   <div class="analytics-card"><h4>Risks and counter-signals</h4><ul>${risks}</ul></div>
-   <div class="analytics-card full"><h4>Pre-match prediction breakdown</h4>
-    <div class="live-prob"><div><span>Home win</span><strong>${Math.round(probs.H*100)}%</strong></div><div><span>Draw</span><strong>${Math.round(probs.D*100)}%</strong></div><div><span>Away win</span><strong>${Math.round(probs.A*100)}%</strong></div></div>
-    <p class="analytics-note">These are the pre-match probabilities calculated by the Footy Picks model. They are not recalculated into an in-play probability: doing that reliably would require a separately validated in-play model and verified live data.</p>
-   </div>
+  const id=eventId(m),stats=state.liveStats[id],assess=liveAssessment(m,stats),hasScore=validScore(m);
+  const homeScore=hasScore?m.homeScore:"—",awayScore=hasScore?m.awayScore:"—";
+  const probs=m.probs||{H:1/3,D:1/3,A:1/3},status=isDemo?"FICTIONAL EXAMPLE":getLiveMinute(m);
+  const reasons=assess.reasons.map(x=>`<li>${esc(x)}</li>`).join(""),risks=assess.risks.map(x=>`<li>${esc(x)}</li>`).join("");
+  const demoTag=isDemo?`<span class="tag warn">DEMO · NOT REAL</span>`:`<span class="tag"><span class="live-pulse"></span>LIVE DATA</span>`;
+  const win=assess.winChance||0,draw=assess.drawChance||0;
+  return`<article class="live-card ${win>=15?"priority":""} ${isDemo?"demo":""}">
+  <div class="row between wrap"><span class="live-rank">${isDemo?"EXAMPLE MATCH":`COMEBACK RANK #${index+1}`}</span>${demoTag}</div>
+  <div class="meta" style="margin-top:7px">${esc(m.league||"Example league")} · ${esc(m.statusName||"Live match scenario")}</div>
+  <div class="row between" style="margin:12px 0;gap:6px">
+   <div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-match win: ${Math.round(probs.H*100)}%</div></div>
+   <div style="text-align:center;min-width:82px"><div class="live-score">${homeScore}–${awayScore}</div><div class="live-minute">${esc(status)}</div></div>
+   <div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-match win: ${Math.round(probs.A*100)}%</div></div>
   </div>
-  <div class="notice"><strong>Betting context:</strong> this is a scenario watchlist, not a bet recommendation. The feed does not supply verified live bookmaker odds, so no expected-value or value-bet claim is made.</div>
-  ${isDemo?`<div class="notice" style="border-color:var(--amber)"><strong>DEMO ONLY.</strong> All teams, scores, probabilities and statistics in this card are fictional and must not be used for betting.</div>`:""}
- </div></details>
- <div class="live-source">${isDemo?"Illustrative sample data · not a real match":`ESPN scoreboard${stats?" and match-summary feed":" feed"} · ${state.liveLastUpdated?"updated "+state.liveLastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"update time unavailable"}`}</div>
- </article>`;
+  <div class="notice"><strong>Currently behind:</strong> ${esc(assess.team||"No trailing team")} ${assess.deficit?`by ${assess.deficit} goal${assess.deficit===1?"":"s"}`:""}.</div>
+  <div class="live-prob">
+   <div class="live-percent-card win"><span>Comeback to win</span><strong>${win.toFixed(1)}%</strong><div class="live-probbar"><span style="width:${win}%"></span></div><small>Trailing team finishes ahead</small></div>
+   <div class="live-percent-card draw"><span>Comeback to draw</span><strong>${draw.toFixed(1)}%</strong><div class="live-probbar"><span style="width:${draw}%"></span></div><small>Trailing team finishes level</small></div>
+  </div>
+  <div class="row wrap"><span class="tag">Pre-match pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${assess.available?"Live stats available":"Limited live stats"}</span></div>
+  <details><summary>Match stats &amp; estimate evidence</summary><div class="explain">
+   <div class="analytics-grid">
+    <div class="analytics-card full"><h4>Live statistics · Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div>
+    <div class="analytics-card"><h4>Factors supporting a comeback</h4><ul>${reasons||"<li>No additional supporting factors were available.</li>"}</ul></div>
+    <div class="analytics-card"><h4>Risks &amp; missing information</h4><ul>${risks||"<li>No additional risk indicators were available.</li>"}</ul></div>
+    <div class="analytics-card full"><h4>Pre-match outcome probabilities</h4>
+     <div class="live-prob"><div class="live-percent-card"><span>Home win</span><strong>${Math.round(probs.H*100)}%</strong></div><div class="live-percent-card"><span>Away win</span><strong>${Math.round(probs.A*100)}%</strong></div></div>
+     <p class="analytics-note">The comeback percentages are heuristic in-play estimates built from pre-match probabilities, score deficit, time and available stats. They are not statistically calibrated and may be unreliable when data is missing.</p>
+    </div>
+   </div>
+   <div class="notice"><strong>Betting context:</strong> bookmaker odds are not supplied, so these percentages do not establish whether a bet has value.</div>
+   ${isDemo?`<div class="notice" style="border-color:var(--amber)"><strong>DEMO ONLY.</strong> All teams, scores, probabilities and statistics are fictional and must not be used for betting.</div>`:""}
+  </div></details>
+  <div class="live-source">${isDemo?"Illustrative sample data · not a real match":`ESPN scoreboard${stats?" and match-summary feed":" feed"} · ${state.liveLastUpdated?"updated "+state.liveLastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"update time unavailable"}`}</div>
+  </article>`;
 }
 function demoMatch(){
  return{id:"demo-001",leagueId:"demo",league:"Illustrative league",state:"in",statusName:"62nd minute · Demo scenario",clock:"62:00",home:"Northbridge FC (Demo)",away:"Riverside Athletic (Demo)",homeScore:0,awayScore:1,date:new Date().toISOString(),
@@ -868,24 +856,25 @@ function demoMatch(){
  a:{attack:1.1,defence:1.4,ppg:1.2,gd:-.2,count:10,history:[]},homeLambda:1.65,awayLambda:1.05,confidence:7,leagueAverage:1.3};
 }
 function liveScenarioType(m,stats){
- const assessment=liveAssessment(m,stats);
- if(assessment.type==="comeback")return"comeback";
- if(assessment.type==="favourite")return"favourite";
- return"draw";
+  const assessment=liveAssessment(m,stats);
+  if(!assessment.trailingSide)return"none";
+  return assessment.winChance>=assessment.drawChance?"win":"draw";
 }
 function renderLive(){
- const actual=state.liveMatches.slice();
- $("liveTabCount").textContent=actual.length?`(${actual.length})`:"";
- $("liveSummary").innerHTML=`<div class="stat"><span class="muted smalltext">Live matches</span><strong>${actual.length}</strong></div><div class="stat"><span class="muted smalltext">With detailed stats</span><strong>${actual.filter(m=>state.liveStats[eventId(m)]&&Object.keys(state.liveStats[eventId(m)].home||{}).length+Object.keys(state.liveStats[eventId(m)].away||{}).length>0).length}</strong></div>`;
- if(!actual.length){
-  const demo=demoMatch();
-  $("liveList").innerHTML=`<div class="notice" style="border-color:var(--amber)"><strong>DEMO MODE:</strong> There are no live matches in the retrieved feed right now. The fictional example below lets you explore the cards and evidence breakdown. It is not real data or a betting opportunity.</div>`+liveCard(demo,0,true);
-  return;
- }
- let rows=actual.map(m=>({...m,_assessment:liveAssessment(m,state.liveStats[eventId(m)])}));
- rows.sort((a,b)=>b._assessment.score-a._assessment.score);
- if(state.liveFilter!=="all")rows=rows.filter(m=>liveScenarioType(m,state.liveStats[eventId(m)])===state.liveFilter);
- $("liveList").innerHTML=rows.length?rows.map((m,i)=>liveCard(m,i,false)).join(""):`<div class="empty">No current matches fit this filter. Try “All scenarios”.</div>`;
+  const actual=state.liveMatches.slice();
+  $("liveTabCount").textContent=actual.length?`(${actual.length})`:"";
+  const trailing=actual.filter(m=>liveAssessment(m,state.liveStats[eventId(m)]).trailingSide);
+  $("liveSummary").innerHTML=`<div class="stat"><span class="muted smalltext">Live matches</span><strong>${actual.length}</strong></div><div class="stat"><span class="muted smalltext">Teams currently behind</span><strong>${trailing.length}</strong></div>`;
+  if(!actual.length){
+   const demo=demoMatch();
+   $("liveList").innerHTML=`<div class="notice" style="border-color:var(--amber)"><strong>DEMO MODE:</strong> There are no live matches in the retrieved feed right now. The fictional example below demonstrates the two comeback estimates. It is not real data or a betting opportunity.</div>`+liveCard(demo,0,true);
+   return;
+  }
+  let rows=trailing.map(m=>({...m,_assessment:liveAssessment(m,state.liveStats[eventId(m)])}));
+  rows.sort((a,b)=>b._assessment.winChance-a._assessment.winChance||b._assessment.drawChance-a._assessment.drawChance);
+  if(state.liveFilter==="win")rows=rows.filter(m=>m._assessment.winChance>=m._assessment.drawChance);
+  if(state.liveFilter==="draw")rows=rows.filter(m=>m._assessment.drawChance>m._assessment.winChance);
+  $("liveList").innerHTML=rows.length?rows.map((m,i)=>liveCard(m,i,false)).join(""):`<div class="empty">No trailing teams fit this filter right now.</div>`;
 }
 function showTab(tab){
  document.querySelectorAll("nav button").forEach(button=>{
