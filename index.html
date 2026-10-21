@@ -138,7 +138,14 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 .live-prob{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
 .live-prob>div{background:#142033;border-radius:9px;padding:9px 5px;text-align:center}
 .live-prob strong{display:block;font-size:22px;font-variant-numeric:tabular-nums}
-.live-prob span{font-size:11px;color:var(--muted)}\n .live-percent-card{background:#142033;border:1px solid var(--border);border-radius:11px;padding:12px;min-width:0}\n .live-percent-card.win{border-color:#347c60}\n .live-percent-card.draw{border-color:#98732a}\n .live-percent-card small{display:block;color:var(--muted);font-size:10px;margin-top:4px}\n .live-probbar{height:6px;background:#34445a;border-radius:8px;overflow:hidden;margin-top:8px}\n .live-probbar span{display:block;height:100%;background:var(--green)}\n .live-percent-card.draw .live-probbar span{background:var(--amber)}
+.live-prob span{font-size:11px;color:var(--muted)}
+.live-percent-card{background:#142033;border:1px solid var(--border);border-radius:11px;padding:12px;min-width:0}
+.live-percent-card.win{border-color:#347c60}
+.live-percent-card.draw{border-color:#98732a}
+.live-percent-card small{display:block;color:var(--muted);font-size:10px;margin-top:4px}
+.live-probbar{height:6px;background:#34445a;border-radius:8px;overflow:hidden;margin-top:8px}
+.live-probbar span{display:block;height:100%;background:var(--green)}
+.live-percent-card.draw .live-probbar span{background:var(--amber)}
 .opportunity{border-radius:10px;padding:10px;background:#164b35;color:#c8ffe1;margin:10px 0;font-size:13px}
 .opportunity.draw{background:#59421a;color:#ffebbb}
 .opportunity.caution{background:#572832;color:#ffd5da}
@@ -165,6 +172,9 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 .live-team-chance{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;background:#142033;border-radius:9px;margin:6px 0}
 .live-team-chance .chance{font-weight:900;font-size:16px;white-space:nowrap}
 .live-team-chance .sub{font-size:10px;color:var(--muted)}
+.team-estimate{border:1px solid var(--border);border-radius:12px;padding:10px;margin:10px 0;background:var(--panel)}
+.team-estimate>.live-prob{margin:8px 0 0}
+.team-estimate .live-percent-card strong{font-size:24px}
 @media(max-width:420px){.live-opportunity-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.live-controls select{min-width:0}}
 /* Keep the filters, summary tiles and result cards in separate layout rows. */
 #live,#previous{display:block;min-width:0;isolation:isolate}
@@ -245,20 +255,25 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
    <div><div class="muted smalltext">FOOTY PICKS · MATCH INTELLIGENCE</div><h2 style="margin:4px 0">Live Centre</h2></div>
    <span class="tag"><span class="live-pulse"></span><span id="liveStatus">Connecting…</span></span>
   </div>
-  <p class="muted smalltext">Follow every available live score, compare estimated win chances, or find potentially interesting situations using a balanced opportunity score.</p>
+  <p class="muted smalltext">See every available live score, or focus on teams currently drawing or behind and their estimated chances of winning or drawing.</p>
   <div class="row between wrap"><span id="liveUpdated" class="smalltext muted">Waiting for data…</span><button id="liveRefresh" class="btn small secondary">Refresh live data</button></div>
  </div>
- <div class="notice"><strong>How to read this:</strong> live win chances and opportunity scores are heuristic estimates, not calibrated probabilities or betting advice. Pre-game predictions are used as a baseline because live bookmaker odds are not available in this feed. An opportunity signal is not proof of betting value. Missing stats are never fabricated.</div>
+ <div class="notice"><strong>How to read this:</strong> in-play win and draw chances are heuristic estimates, not calibrated probabilities or betting advice. They use pre-game predictions, score, time and available match statistics. Live bookmaker odds are not available, so these estimates cannot establish betting value. Missing stats are never fabricated.</div>
  <div class="live-filter" id="liveFilters">
   <button class="active" data-filter="all">All Live Scores</button>
-  <button data-filter="win">Win Potential</button>
   <button data-filter="opportunity">Opportunities</button>
  </div>
  <div class="live-controls row wrap" style="align-items:end;gap:12px;margin:0 0 14px">
   <label class="grow" for="liveLeagueFilter">League
    <select id="liveLeagueFilter" style="display:block;width:100%;margin-top:5px"><option value="all">All leagues</option></select>
   </label>
-  <label class="live-trailing-toggle"><input type="checkbox" id="liveTrailingOnly"> Trailing teams only</label>
+  <label class="grow" for="liveSituationFilter">Show teams
+   <select id="liveSituationFilter" style="display:block;width:100%;margin-top:5px">
+    <option value="all">Drawing or losing</option>
+    <option value="drawing">Currently drawing</option>
+    <option value="losing">Currently losing</option>
+   </select>
+  </label>
  </div>
  <div id="liveSummary" class="statgrid"></div>
  <div id="liveList"><div class="empty">Loading live matches…</div></div>
@@ -347,7 +362,7 @@ const state={
  matches:[],loaded:false,loading:false,topMode:false,
  acc:readStore("fp_acc",[]),history:readStore("fp_prediction_history",[]),
  lastTest:null,activeIndex:1,mode:"manual",manualIndex:1,minSample:100,
- liveMatches:[],liveStats:{},liveFilter:"all",liveLeagueFilter:"all",liveTrailingOnly:false,liveLoading:false,liveLastUpdated:null
+ liveMatches:[],liveStats:{},liveFilter:"all",liveLeagueFilter:"all",liveSituationFilter:"all",liveLoading:false,liveLastUpdated:null
 };
 
 function readStore(k,f){try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}}
@@ -878,61 +893,49 @@ function liveOpportunityAssessment(m,stats){
 }
 function liveCard(m,index,mode="all"){
  const id=eventId(m),stats=state.liveStats[id],a=liveOpportunityAssessment(m,stats),hasScore=a.hasScore;
- const probs=m.probs||{H:1/3,D:1/3,A:1/3},status=getLiveMinute(m);
- const shownTeams=state.liveTrailingOnly?a.teams.filter(t=>t.trailing):a.teams;
+ const probs=m.probs||{H:1/3,D:1/3,A:1/3},status=getLiveMinute(m),scoreLine=hasScore?`${a.hs}–${a.as}`:"—";
+ const candidates= a.teams.filter(t=>!hasScore || t.score<=t.oppScore);
+ const shownTeams=candidates.filter(t=>state.liveSituationFilter==="all" || (state.liveSituationFilter==="drawing"&&t.score===t.oppScore) || (state.liveSituationFilter==="losing"&&t.score<t.oppScore));
  const ranked=[...shownTeams].sort((x,y)=>y.opportunityScore-x.opportunityScore);
- const leader=ranked[0]||[...a.teams].sort((x,y)=>y.opportunityScore-x.opportunityScore)[0],scoreLine=hasScore?`${a.hs}–${a.as}`:"—";
- const reasonText=a.available?"Includes available live stats":"Limited live stats; score, time and pre-game estimates carry more weight";
- const modeLabel=mode==="opportunity"?`OPPORTUNITY RANK #${index+1}`:mode==="win"?`WIN POTENTIAL #${index+1}`:`LIVE MATCH #${index+1}`;
- const teamRows=shownTeams.map(t=>`<div class="live-team-chance"><div><strong>${esc(t.name)}</strong><div class="sub">Pre-game ${Math.round(t.pre)}% · ${t.delta>=0?"+":""}${t.delta.toFixed(1)} pts vs pre-game${t.trailing?" · currently behind":""}</div></div><div class="chance">${t.live.toFixed(1)}%</div></div>`).join("");
- const opportunityRows=ranked.map(t=>`<div class="live-opportunity-metric ${t===leader?"highlight":""}"><span>${esc(t.name)} · opportunity</span><strong>${t.opportunityScore}/100</strong><span>${t.delta>=0?"+":""}${t.delta.toFixed(1)} pts vs pre-game</span></div>`).join("");
+ const leader=ranked[0]||[...candidates].sort((x,y)=>y.opportunityScore-x.opportunityScore)[0];
  const reasons=[];
- if(a.minute!==null)reasons.push(`${a.minute} minutes elapsed; the remaining time is factored into the live estimate.`);else reasons.push("Match minute was not available, so a neutral time assumption is used.");
- if(hasScore)reasons.push(`Current score is ${a.hs}–${a.as}. The scoreline affects estimated win and draw chances.`);else reasons.push("A usable score was not supplied by the live feed.");
+ if(a.minute!==null)reasons.push(`${a.minute} minutes elapsed; time remaining affects the estimate.`);else reasons.push("Match minute was not available, so a neutral time assumption is used.");
+ if(hasScore)reasons.push(`Current score is ${a.hs}–${a.as}. Only teams drawing or behind are highlighted.`);else reasons.push("A usable score was not supplied by the live feed.");
  if(a.available)reasons.push(`${a.available} categories of live statistics were available to adjust the estimates.`);
- reasons.push("The opportunity score balances live win chance, change from pre-game, underdog status and available pressure indicators.");
+ reasons.push("The balanced opportunity score is used to rank relevant teams in Opportunities view; it is a sorting aid, not a probability.");
+ const teamCards=shownTeams.map(t=>{
+   const drawing=hasScore&&t.score===t.oppScore,losing=hasScore&&t.score<t.oppScore;
+   const label=drawing?"Currently drawing":losing?`Currently behind by ${t.oppScore-t.score}`:"Score unavailable";
+   const winLabel=drawing?"Chance to win":"Comeback to win",drawLabel=drawing?"Chance of a draw":"Comeback to draw";
+   return `<div class="team-estimate"><div class="row between wrap"><strong>${esc(t.name)}</strong><span class="tag">${label}</span></div><div class="meta">Pre-game win: ${Math.round(t.pre)}% · ${t.delta>=0?"+":""}${t.delta.toFixed(1)} pts vs pre-game</div><div class="live-prob"><div class="live-percent-card win"><span>${winLabel}</span><strong>${t.live.toFixed(1)}%</strong><div class="live-probbar"><span style="width:${clamp(t.live,0,100)}%"></span></div><small>Estimated chance of this team winning</small></div><div class="live-percent-card draw"><span>${drawLabel}</span><strong>${a.live.D.toFixed(1)}%</strong><div class="live-probbar"><span style="width:${clamp(a.live.D,0,100)}%"></span></div><small>Estimated chance of the match finishing level</small></div></div></div>`;
+ }).join("");
  const demoTag=`<span class="tag"><span class="live-pulse"></span>LIVE DATA</span>`;
- return`<article class="live-card ${leader.opportunityScore>=60?"priority":""}">
+ const modeLabel=mode==="opportunity"?`OPPORTUNITY #${index+1}`:`LIVE MATCH #${index+1}`;
+ return `<article class="live-card ${leader&&leader.opportunityScore>=60?"priority":""}">
   <div class="row between wrap"><span class="live-rank">${modeLabel}</span>${demoTag}</div>
   <div class="meta" style="margin-top:7px">${esc(m.league||"League")} · ${esc(m.statusName||"Live match")}</div>
-  <div class="row between" style="margin:12px 0;gap:6px">
-   <div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-game win: ${Math.round(probs.H*100)}%</div></div>
-   <div style="text-align:center;min-width:82px"><div class="live-score">${scoreLine}</div><div class="live-minute">${esc(status)}</div></div>
-   <div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-game win: ${Math.round(probs.A*100)}%</div></div>
-  </div>
-  <div class="live-opportunity-grid">
-   <div class="live-opportunity-metric highlight"><span>Home live win chance</span><strong>${a.live.H.toFixed(1)}%</strong><span>${a.teams[0].delta>=0?"+":""}${a.teams[0].delta.toFixed(1)} pts vs pre-game</span></div>
-   <div class="live-opportunity-metric highlight"><span>Away live win chance</span><strong>${a.live.A.toFixed(1)}%</strong><span>${a.teams[1].delta>=0?"+":""}${a.teams[1].delta.toFixed(1)} pts vs pre-game</span></div>
-   <div class="live-opportunity-metric signal"><span>Live draw chance</span><strong>${a.live.D.toFixed(1)}%</strong><span>Estimated chance of a draw</span></div>
-  </div>
-  <div class="opportunity ${leader.opportunityScore>=60?"draw":"neutral"}"><div class="opportunity-title">Balanced opportunity score: ${leader.opportunityScore}/100</div>${esc(leader.name)} ranks highest in this match based on live win chance, movement from the pre-game estimate, underdog status and available match pressure.</div>
-  ${teamRows}
-  <div class="row wrap"><span class="tag">Pre-game pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${reasonText}</span></div>
-  <details><summary>Match stats &amp; estimate evidence</summary><div class="explain">
-   <div class="analytics-grid">
-    <div class="analytics-card full"><h4>Live statistics · Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div>
-    <div class="analytics-card"><h4>Opportunity score by team</h4><div class="live-opportunity-grid">${opportunityRows}</div><p class="analytics-note">A sorting score out of 100, not a probability and not a betting edge.</p></div>
-    <div class="analytics-card"><h4>What influenced this estimate?</h4><ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><p class="analytics-note">Pre-game probabilities: home ${Math.round(probs.H*100)}%, draw ${Math.round(probs.D*100)}%, away ${Math.round(probs.A*100)}%.</p></div>
-   </div>
-   <div class="notice"><strong>Important:</strong> the feed does not provide live bookmaker odds. Pre-game probabilities are only a baseline; this signal cannot establish current market value or profitability.</div>
-  </div></details>
+  <div class="row between" style="margin:12px 0;gap:6px"><div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-game win: ${Math.round(probs.H*100)}%</div></div><div style="text-align:center;min-width:82px"><div class="live-score">${scoreLine}</div><div class="live-minute">${esc(status)}</div></div><div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-game win: ${Math.round(probs.A*100)}%</div></div></div>
+  ${shownTeams.length?teamCards:`<div class="notice">No drawing or losing team matches the current situation filter.</div>`}
+  ${mode==="opportunity"&&leader?`<div class="opportunity ${leader.opportunityScore>=60?"draw":"neutral"}"><div class="opportunity-title">Balanced opportunity score: ${leader.opportunityScore}/100</div>${esc(leader.name)} ranks highest among the currently drawing or losing teams in this match.</div>`:""}
+  <div class="row wrap"><span class="tag">Pre-game pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${a.available?"Live stats available":"Limited live stats"}</span></div>
+  <details><summary>Match stats &amp; estimate evidence</summary><div class="explain"><div class="analytics-grid"><div class="analytics-card full"><h4>Live statistics · Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div><div class="analytics-card"><h4>Factors behind the estimate</h4><ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div><div class="analytics-card"><h4>Pre-game outcome probabilities</h4><div class="live-prob"><div class="live-percent-card"><span>Home win</span><strong>${Math.round(probs.H*100)}%</strong></div><div class="live-percent-card"><span>Draw</span><strong>${Math.round(probs.D*100)}%</strong></div><div class="live-percent-card"><span>Away win</span><strong>${Math.round(probs.A*100)}%</strong></div></div><p class="analytics-note">Live chances are heuristic estimates and have not been calibrated against historical in-play outcomes.</p></div></div><div class="notice"><strong>Important:</strong> pre-game predictions are a baseline, not live market odds, so these estimates cannot establish betting value.</div></div></details>
   <div class="live-source">ESPN scoreboard${stats?" and match-summary feed":" feed"} · ${state.liveLastUpdated?"updated "+state.liveLastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"update time unavailable"}</div>
-  </article>`;
+ </article>`;
 }
 function renderLive(){
  const all=state.liveMatches.slice();
  $("liveTabCount").textContent=all.length?`(${all.length})`:"";
  const league=state.liveLeagueFilter||"all";
  let matches=all.filter(m=>league==="all"||m.leagueId===league);
- const trailingCount=matches.filter(m=>{const a=liveOpportunityAssessment(m,state.liveStats[eventId(m)]);return a.teams.some(t=>t.trailing)}).length;
- $("liveSummary").innerHTML=`<div class="stat"><span class="muted smalltext">Live matches shown</span><strong>${matches.length}</strong></div><div class="stat"><span class="muted smalltext">Matches with a trailing team</span><strong>${trailingCount}</strong></div>`;
- if(!all.length){
-  $("liveList").innerHTML=`<div class="empty">No live matches were returned by the feed right now. Refresh later to check again. The live feed may not cover every competition or update instantly.</div>`;
-  return;
- }
- if(state.liveTrailingOnly)matches=matches.filter(m=>liveOpportunityAssessment(m,state.liveStats[eventId(m)]).teams.some(t=>t.trailing));
- if(state.liveFilter==="win")matches.sort((x,y)=>Math.max(...liveOpportunityAssessment(y,state.liveStats[eventId(y)]).teams.map(t=>t.live))-Math.max(...liveOpportunityAssessment(x,state.liveStats[eventId(x)]).teams.map(t=>t.live)));
- else if(state.liveFilter==="opportunity")matches.sort((x,y)=>Math.max(...liveOpportunityAssessment(y,state.liveStats[eventId(y)]).teams.map(t=>t.opportunityScore))-Math.max(...liveOpportunityAssessment(x,state.liveStats[eventId(x)]).teams.map(t=>t.opportunityScore)));
+ const assess=m=>liveOpportunityAssessment(m,state.liveStats[eventId(m)]);
+ const relevant=m=>{
+  const a=assess(m);if(!a.hasScore)return false;
+  return a.teams.some(t=>t.score<=t.oppScore && (state.liveSituationFilter==="all" || (state.liveSituationFilter==="drawing"&&t.score===t.oppScore) || (state.liveSituationFilter==="losing"&&t.score<t.oppScore)));
+ };
+ if(state.liveFilter==="opportunity")matches=matches.filter(relevant);
+ $("liveSummary").innerHTML=`<div class="stat"><span class="muted smalltext">Live matches shown</span><strong>${matches.length}</strong></div><div class="stat"><span class="muted smalltext">Drawing / losing teams</span><strong>${matches.reduce((n,m)=>n+assess(m).teams.filter(t=>t.score<=t.oppScore).length,0)}</strong></div>`;
+ if(!all.length){$("liveList").innerHTML=`<div class="empty">No live matches were returned by the feed right now. Refresh later to check again. The live feed may not cover every competition or update instantly.</div>`;return;}
+ if(state.liveFilter==="opportunity")matches.sort((x,y)=>Math.max(...assess(y).teams.filter(t=>t.score<=t.oppScore).map(t=>t.opportunityScore),0)-Math.max(...assess(x).teams.filter(t=>t.score<=t.oppScore).map(t=>t.opportunityScore),0));
  else matches.sort((x,y)=>new Date(x.date)-new Date(y.date));
  $("liveList").innerHTML=matches.length?matches.map((m,i)=>liveCard(m,i,state.liveFilter)).join(""):`<div class="empty">No live matches match those filters right now.</div>`;
 }
@@ -960,7 +963,7 @@ $("saveSettings").addEventListener("click",saveSettings);$("runTest").addEventLi
 $("liveRefresh").addEventListener("click",fetchLive);
 document.querySelectorAll("#liveFilters button").forEach(b=>b.addEventListener("click",()=>{state.liveFilter=b.dataset.filter;document.querySelectorAll("#liveFilters button").forEach(x=>x.classList.toggle("active",x===b));renderLive()}));
 $("liveLeagueFilter").addEventListener("change",e=>{state.liveLeagueFilter=e.target.value;renderLive()});
-$("liveTrailingOnly").addEventListener("change",e=>{state.liveTrailingOnly=e.target.checked;renderLive()});
+$("liveSituationFilter").addEventListener("change",e=>{state.liveSituationFilter=e.target.value;renderLive()});
 window.addToAccumulator=addToAccumulator;window.removeAcc=removeAcc;
 loadSettings();renderAccumulator();renderHistory();renderLive();
 
