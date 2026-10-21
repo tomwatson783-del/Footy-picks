@@ -13,6 +13,8 @@
  --blue:#80b7ff;--red:#ff8989;--amber:#ffd58a;--border:#34445a;
 }
 *{box-sizing:border-box}
+/* The author stylesheet must not override the browser's hidden attribute on inactive tabs. */
+[hidden]{display:none !important}
 body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;line-height:1.45}
 header{padding:18px 16px 13px;background:#131f30;position:sticky;top:0;z-index:5;border-bottom:1px solid var(--border)}
 h1{font-size:26px;margin:0;font-weight:850;letter-spacing:-.7px}
@@ -149,7 +151,19 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 .live-statbar .left{background:var(--green)}
 .live-statbar .right{background:var(--blue)}
 .live-source{font-size:10px;color:var(--muted);margin-top:9px}
-.live-filter{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 14px}
+.live-filter{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0 14px;position:relative;clear:both}
+/* Keep the filters, summary tiles and result cards in separate layout rows. */
+#live,#previous{display:block;min-width:0;isolation:isolate}
+#liveSummary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 18px;clear:both;position:relative}
+#liveList{display:grid;gap:12px;margin:0 0 18px;clear:both;min-width:0;position:relative}
+#liveList>.live-card{margin:0;min-width:0}
+#historyStats{display:block;clear:both;margin:18px 0 18px;position:relative;min-width:0}
+#historyStats .statgrid{gap:8px}
+#historyList{display:grid;gap:12px;clear:both;margin:0 0 18px;min-width:0;position:relative}
+#historyList>.match{margin:0;min-width:0}
+#liveFilters button{max-width:100%;white-space:normal}
+.live-card,.match{min-width:0;overflow-wrap:anywhere}
+.live-statrow{grid-template-columns:minmax(0,1fr) minmax(76px,1.4fr) minmax(0,1fr)}
 .live-filter button{border:1px solid var(--border);border-radius:9px;padding:8px 10px;background:var(--panel);color:var(--muted);font-size:12px;font-weight:800}
 .live-filter button.active{background:var(--green);border-color:var(--green);color:#10251d}
 .live-card details{border-top-color:#3b4b61}
@@ -199,9 +213,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
   <div class="muted smalltext" id="activeModelNote" style="margin-top:6px">Load fixtures to calculate predictions.</div>
  </div>
  <div class="controls">
-  <div><label for="league">Competition</label><select id="league">
-   <option value="all">All leagues</option><option value="eng.1">Premier League</option><option value="eng.2" selected>Championship</option><option value="eng.3">League One</option><option value="eng.4">League Two</option><option value="esp.1">La Liga</option><option value="ger.1">Bundesliga</option><option value="ita.1">Serie A</option><option value="fra.1">Ligue 1</option><option value="uefa.champions">Champions League</option>
-  </select></div>
+  <div><label for="league">Competition</label><select id="league" data-default="eng.2"></select></div>
   <div><label for="days">Fixture window</label><select id="days"><option value="today">Today</option><option value="3">Next 3 days</option><option value="7">Next 7 days</option><option value="14" selected>Next 14 days</option><option value="30">Next 30 days</select></div>
   <div><label for="sort">Sort by</label><select id="sort"><option value="date">Kick-off date</option><option value="confidence">Confidence</option></select></div>
  </div>
@@ -258,9 +270,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
  <button class="btn secondary" id="refreshHistory">Refresh scores &amp; results</button>
  <div class="controls">
   <div><label for="historyDays">Look back</label><select id="historyDays"><option value="7">Last 7 days</option><option value="14" selected>Last 14 days</option></select></div>
-  <div><label for="historyLeague">Competition</label><select id="historyLeague">
-   <option value="all">All leagues</option><option value="eng.1">Premier League</option><option value="eng.2">Championship</option><option value="eng.3">League One</option><option value="eng.4">League Two</option><option value="esp.1">La Liga</option><option value="ger.1">Bundesliga</option><option value="ita.1">Serie A</option><option value="fra.1">Ligue 1</option><option value="uefa.champions">Champions League</option>
-  </select></div>
+  <div><label for="historyLeague">Competition</label><select id="historyLeague" data-default="all"></select></div>
  </div>
  <div id="historyStats"></div><div id="historyList"></div>
  <p class="muted smalltext">Snapshots are stored only in this browser. Clearing site data may remove them.</p>
@@ -296,6 +306,18 @@ const LEAGUES={
  "eng.1":"Premier League","eng.2":"Championship","eng.3":"League One","eng.4":"League Two",
  "esp.1":"La Liga","ger.1":"Bundesliga","ita.1":"Serie A","fra.1":"Ligue 1","uefa.champions":"Champions League"
 };
+// Populate both competition filters from one shared list so they cannot drift apart.
+function initLeagueSelects(){
+ for(const id of ["league","historyLeague"]){
+  const select=$(id),preferred=select.dataset.default||"all";
+  select.replaceChildren(new Option("All leagues","all"));
+  for(const [leagueId,name] of Object.entries(LEAGUES)){
+   select.add(new Option(name,leagueId));
+  }
+  select.value=[...select.options].some(option=>option.value===preferred)?preferred:"all";
+ }
+}
+
 const MODELS=[
  {name:"A — Stable",short:"A",weights:[.60,.30,.10]},
  {name:"B — Balanced",short:"B",weights:[.30,.40,.30]},
@@ -353,26 +375,34 @@ async function fetchLeague(id,n=6,progress=()=>{}){
  const unique=new Map();all.forEach(m=>unique.set(eventId(m),m));return[...unique.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
 }
 async function fetchAllLeagues(n=6,progress=()=>{}){
- const ids=Object.keys(LEAGUES),all=[],errors=[];
+ const all=[],errors=[],ids=Object.keys(LEAGUES);
  let nextIndex=0,completed=0;
- // Fetch a small number of competitions concurrently to reduce wait time
- // without flooding the public scoreboard API with requests.
+ // Fetch a few competitions at once: faster than serial requests without
+ // launching every league's full history simultaneously.
  async function worker(){
   while(nextIndex<ids.length){
    const index=nextIndex++,id=ids[index],name=LEAGUES[id];
    progress(completed,ids.length,name);
    try{
     const rows=await fetchLeague(id,n);
-    if(rows.length)all.push(...rows);else errors.push(name);
-   }catch(error){errors.push(name);console.warn(`Could not load ${name}:`,error.message)}
-   completed++;
-   progress(completed,ids.length,name);
+    if(rows.length)all.push(...rows);
+    else errors.push(name);
+   }catch(error){
+    errors.push(name);
+    console.warn(`Could not load ${name}:`,error.message);
+   }finally{
+    completed++;
+    progress(completed,ids.length,name);
+   }
   }
  }
  await Promise.all(Array.from({length:Math.min(3,ids.length)},()=>worker()));
  const unique=new Map();
- all.forEach(match=>unique.set(eventId(match),match));
- return{matches:[...unique.values()].sort((a,b)=>new Date(a.date)-new Date(b.date)),errors};
+ for(const match of all)unique.set(eventId(match),match);
+ return{
+  matches:[...unique.values()].sort((a,b)=>new Date(a.date)-new Date(b.date)),
+  errors
+ };
 }
 function historyForTeam(previous,key){
  const out=[];
@@ -635,49 +665,72 @@ function statValue(stats,names){
  return null;
 }
 function extractStats(summary,m){
- const teams=summary?.boxscore?.teams||summary?.boxscore?.statistics||[];
  const result={home:{},away:{}};
  const competitors=summary?.header?.competitions?.[0]?.competitors||m.competitors||[];
- const homeId=String(m.homeId),awayId=String(m.awayId);
- function put(side,key,val){if(val!==null&&val!==undefined&&val!=="")result[side][key]=val}
- for(const t of teams){
-  const id=String(t.team?.id||t.id||"");
-  const side=id===homeId?"home":id===awayId?"away":null;if(!side)continue;
-  const stats=t.statistics||t.stats||[];
+ const homeId=String(m.homeId??""),awayId=String(m.awayId??"");
+ const norm=value=>String(value??"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+ const sideFor=obj=>{
+  const id=String(obj?.team?.id??obj?.id??"");
+  if(id&&id===homeId)return "home";
+  if(id&&id===awayId)return "away";
+  const name=norm(obj?.team?.displayName||obj?.team?.name||obj?.displayName||obj?.name);
+  if(name&&name===norm(m.home))return "home";
+  if(name&&name===norm(m.away))return "away";
+  const ha=String(obj?.homeAway||"").toLowerCase();
+  return ha==="home"?"home":ha==="away"?"away":null;
+ };
+ const statKey=name=>{
+  const n=norm(name),compact=n.replace(/\s+/g,"");
+  if(/possession/.test(compact))return "possession";
+  if(/shotsontarget|shotsongoal|shotsonframe|ontarget|^sog$/.test(compact))return "shotsOnTarget";
+  if(/totalshots|shotstotal|totalattempts/.test(compact)||compact==="shots")return "shots";
+  if(/expectedgoals|expectedgoal|^xg$|xgtotal/.test(compact))return "xg";
+  if(/redcards|redcard|sendingoff|sentoff/.test(compact))return "redCards";
+  if(/yellowcards|yellowcard/.test(compact))return "yellowCards";
+  if(/corner/.test(compact))return "corners";
+  return null;
+ };
+ const add=(side,key,value)=>{
+  if(!side||!key||value===null||value===undefined||value==="")return;
+  if(typeof value==="object")value=value.displayValue??value.value??value.summary??"";
+  if(value!=="")result[side][key]=value;
+ };
+ const readStats=(side,stats)=>{
   if(Array.isArray(stats)){
-   for(const s of stats){const name=String(s.name||s.abbreviation||s.displayName||"").toLowerCase(),val=s.displayValue??s.value;
-    if(/possession/.test(name))put(side,"possession",val);
-    else if(/shots on target/.test(name))put(side,"shotsOnTarget",val);
-    else if(/total shots|shots total|shots$/.test(name))put(side,"shots",val);
-    else if(/corner/.test(name))put(side,"corners",val);
-    else if(/yellow card/.test(name))put(side,"yellowCards",val);
-    else if(/red card/.test(name))put(side,"redCards",val);
-    else if(/expected goals|(^| )xg($| )/.test(name))put(side,"xg",val);
+   for(const item of stats){
+    const key=statKey(item?.name||item?.abbreviation||item?.displayName||item?.shortDisplayName);
+    add(side,key,item?.displayValue??item?.value??item?.summary);
    }
   }else if(stats&&typeof stats==="object"){
-   put(side,"possession",statValue(stats,["possession","possessionPct"]));
-   put(side,"shots",statValue(stats,["shots","totalShots"]));
-   put(side,"shotsOnTarget",statValue(stats,["shotsOnTarget","shots on target"]));
-   put(side,"corners",statValue(stats,["corners","cornerKicks"]));
-   put(side,"xg",statValue(stats,["expectedGoals","xG"]));
+   for(const [name,value] of Object.entries(stats))add(side,statKey(name),value);
   }
- }
- // Some ESPN event responses expose statistics directly on competitors.
- for(const c of competitors){
-  const id=String(c.id||c.team?.id||"");
-  const side=id===homeId?"home":id===awayId?"away":null;if(!side)continue;
-  const stats=c.statistics||[];
-  for(const s of (Array.isArray(stats)?stats:[])){
-   const n=String(s.name||s.displayName||"").toLowerCase(),v=s.displayValue??s.value;
-   if(/possession/.test(n))put(side,"possession",v);
-   else if(/shots on target/.test(n))put(side,"shotsOnTarget",v);
-   else if(/total shots|shots total|shots$/.test(n))put(side,"shots",v);
-   else if(/corner/.test(n))put(side,"corners",v);
-   else if(/red card/.test(n))put(side,"redCards",v);
-   else if(/expected goals|(^| )xg($| )/.test(n))put(side,"xg",v);
-  }
- }
+ };
+ // ESPN's summary endpoint usually supplies team statistics under boxscore.teams.
+ for(const team of (summary?.boxscore?.teams||[]))readStats(sideFor(team),team.statistics||team.stats||[]);
+ // Some event/competition responses attach the stats to the competitor object.
+ for(const team of competitors)readStats(sideFor(team),team.statistics||team.stats||[]);
  return result;
+}
+function attachLivePredictions(matches){
+ const loadedById=new Map(state.matches.map(match=>[eventId(match),match]));
+ const model=MODELS[state.activeIndex]||MODELS[state.manualIndex]||MODELS[1];
+ for(const match of matches){
+  const loaded=loadedById.get(eventId(match));
+  if(loaded?.probs&&["H","D","A"].every(key=>Number.isFinite(Number(loaded.probs[key])))){
+   match.probs={H:Number(loaded.probs.H),D:Number(loaded.probs.D),A:Number(loaded.probs.A)};
+   match.prediction=loaded.prediction;
+   match.predictedScore=loaded.predictedScore;
+   continue;
+  }
+  // Fallback: calculate using only completed matches in this league before kick-off.
+  const kickoff=new Date(match.date).getTime();
+  const previous=state.matches.filter(row=>row.leagueId===match.leagueId&&isFinished(row)&&new Date(row.date).getTime()<kickoff);
+  const forecast=calculatePrediction(match,previous,model);
+  match.probs=forecast.probs;
+  match.prediction=forecast.prediction;
+  match.predictedScore=forecast.predictedScore;
+  match.confidence=forecast.confidence;
+ }
 }
 async function fetchLive(){
  if(state.liveLoading)return;state.liveLoading=true;$("liveRefresh").disabled=true;$("liveStatus").textContent="Updating…";
@@ -690,6 +743,7 @@ async function fetchLive(){
   results.forEach(x=>all.push(...x));
   const unique=new Map();all.forEach(m=>unique.set(eventId(m),m));
   state.liveMatches=[...unique.values()].filter(isLive).sort((a,b)=>new Date(a.date)-new Date(b.date));
+  attachLivePredictions(state.liveMatches);
   const stats={};
   await Promise.all(state.liveMatches.map(async m=>{
    try{
@@ -712,19 +766,22 @@ function getLiveMinute(m){
 function liveAssessment(m,stats){
  const elapsed=parseInt(String(m.clock||"").split(":")[0],10),minute=Number.isFinite(elapsed)?elapsed:null;
  const hs=Number(m.homeScore),as=Number(m.awayScore),behindHome=hs<as,behindAway=as<hs,draw=hs===as;
- const p=m.probs||{H:.34,D:.32,A:.34},homeProb=p.H??.34,awayProb=p.A??.34;
+ const p=m.probs||{H:1/3,D:1/3,A:1/3},homeProb=Number(p.H??1/3),awayProb=Number(p.A??1/3);
  const homeStats=stats?.home||{},awayStats=stats?.away||{};
  const hShots=statNum(homeStats.shots),aShots=statNum(awayStats.shots),hTarget=statNum(homeStats.shotsOnTarget),aTarget=statNum(awayStats.shotsOnTarget);
  const hPoss=statNum(homeStats.possession),aPoss=statNum(awayStats.possession);
+ const hXg=statNum(homeStats.xg),aXg=statNum(awayStats.xg),hRed=statNum(homeStats.redCards),aRed=statNum(awayStats.redCards);
  let hPressure=0,aPressure=0,available=0;
  if(hShots!==null&&aShots!==null){available++;hPressure+=(hShots-aShots)*1.5;aPressure+=(aShots-hShots)*1.5}
  if(hTarget!==null&&aTarget!==null){available++;hPressure+=(hTarget-aTarget)*3;aPressure+=(aTarget-hTarget)*3}
  if(hPoss!==null&&aPoss!==null){available++;hPressure+=(hPoss-aPoss)*.12;aPressure+=(aPoss-hPoss)*.12}
+ if(hXg!==null&&aXg!==null){available++;hPressure+=(hXg-aXg)*14;aPressure+=(aXg-hXg)*14}
+ if(hRed!==null&&aRed!==null){available++;hPressure+=(aRed-hRed)*7;aPressure+=(hRed-aRed)*7}
  const hEvidence=clamp(50+(homeProb-.33)*70+hPressure,0,100);
  const aEvidence=clamp(50+(awayProb-.33)*70+aPressure,0,100);
  let type="favourite",side=homeProb>=awayProb?"home":"away",label="Pre-match favourite to win";
  if(behindHome||behindAway){side=behindHome?"home":"away";type="comeback";label=`${side==="home"?m.home:m.away} comeback watch`}
- else if(draw){type="favourite";label="Favourite to win from a draw"}
+ else if(draw){type="draw";label="Draw / winner watch"}
  const trailingSide=behindHome?"home":behindAway?"away":null;
  let score=trailingSide==="home"?hEvidence:trailingSide==="away"?aEvidence:Math.max(hEvidence,aEvidence);
  let strength=score>=68?"Stronger watchlist signal":score>=53?"Worth monitoring":"Limited evidence";
@@ -739,6 +796,11 @@ function liveAssessment(m,stats){
   const target=trailingSide==="home"?hTarget:aTarget,oppTarget=trailingSide==="home"?aTarget:hTarget;
   if(shots!==null&&oppShots!==null){if(shots>oppShots)reasons.push(`The trailing side has more shots (${shots} vs ${oppShots}).`);else risks.push(`The trailing side does not lead total shots (${shots} vs ${oppShots}).`)}
   if(target!==null&&oppTarget!==null){if(target>oppTarget)reasons.push(`Shots on target favour the trailing side (${target} vs ${oppTarget}).`);else risks.push(`Shots on target do not favour the trailing side (${target} vs ${oppTarget}).`)}
+  const xg=trailingSide==="home"?hXg:aXg,oppXg=trailingSide==="home"?aXg:hXg;
+  if(xg!==null&&oppXg!==null){if(xg>oppXg)reasons.push(`Expected goals favour the trailing side (${xg} vs ${oppXg}), suggesting better chance quality.`);else risks.push(`Expected goals do not favour the trailing side (${xg} vs ${oppXg}).`)}
+  const reds=trailingSide==="home"?hRed:aRed,oppReds=trailingSide==="home"?aRed:hRed;
+  if(reds!==null&&oppReds!==null&&oppReds>reds)reasons.push("The opposition has more red cards, which may create a numerical advantage.");
+  if(reds!==null&&reds>0)risks.push("The trailing side has at least one red card, a significant comeback obstacle.");
   if(minute!==null&&minute>=75)risks.push("Little regulation time remains; stoppage time and match status matter.");
   else if(minute!==null&&minute<=60)reasons.push("There is still meaningful regulation time remaining.");
  }else{
@@ -766,7 +828,7 @@ function liveStatsHtml(m,stats){
 function liveCard(m,index,isDemo=false){
  const id=eventId(m),stats=state.liveStats[id],assess=liveAssessment(m,stats),hasScore=validScore(m);
  const homeScore=hasScore?m.homeScore:"—",awayScore=hasScore?m.awayScore:"—";
- const probs=m.probs||{H:.34,D:.32,A:.34},status=isDemo?"FICTIONAL EXAMPLE":getLiveMinute(m);
+ const probs=m.probs||{H:1/3,D:1/3,A:1/3},status=isDemo?"FICTIONAL EXAMPLE":getLiveMinute(m);
  const top=assess.level==="good";
  const cls=isDemo?"demo":top?"priority":"";
  const opportunityClass=assess.type==="comeback"?"":assess.type==="favourite"?"neutral":"draw";
@@ -826,11 +888,21 @@ function renderLive(){
  $("liveList").innerHTML=rows.length?rows.map((m,i)=>liveCard(m,i,false)).join(""):`<div class="empty">No current matches fit this filter. Try “All scenarios”.</div>`;
 }
 function showTab(tab){
- document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
- ["fixtures","live","accumulator","previous","test","settings"].forEach(id=>$(id).hidden=id!==tab);
- if(tab==="accumulator")renderAccumulator();if(tab==="previous")renderHistory();if(tab==="fixtures")renderFixtures();if(tab==="live"){renderLive();fetchLive()}
+ document.querySelectorAll("nav button").forEach(button=>{
+  button.classList.toggle("active",button.dataset.tab===tab);
+ });
+ ["fixtures","live","accumulator","previous","test","settings"]
+  .forEach(id=>$(id).hidden=id!==tab);
+ if(tab==="accumulator")renderAccumulator();
+ if(tab==="previous")renderHistory();
+ if(tab==="fixtures")renderFixtures();
+ if(tab==="live"){
+  renderLive();
+  fetchLive();
+ }
 }
-document.querySelectorAll("nav button").forEach(b=>b.addEventListener("click",()=>{if(!state.loading)showTab(b.dataset.tab)}));
+initLeagueSelects();
+document.querySelectorAll("nav button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
 $("load").addEventListener("click",loadData);$("league").addEventListener("change",renderFixtures);$("days").addEventListener("change",renderFixtures);$("sort").addEventListener("change",renderFixtures);
 $("top10").addEventListener("click",()=>{state.topMode=!state.topMode;$("top10").textContent=state.topMode?"Hide Top 10 picks":"Show Top 10 picks";if(state.topMode)renderTop10();else $("topbox").innerHTML=""});
 $("clearAcc").addEventListener("click",()=>{if(confirm("Clear all accumulator selections?")){state.acc=[];store("fp_acc",state.acc);renderAccumulator();renderFixtures()}});
