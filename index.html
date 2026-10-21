@@ -181,6 +181,8 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 #liveSummary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 18px;clear:both;position:relative}
 #liveList{display:grid;gap:12px;margin:0 0 18px;clear:both;min-width:0;position:relative}
 #liveList>.live-card{margin:0;min-width:0}
+.live-league-group{display:grid;gap:12px;margin-bottom:10px;min-width:0}
+.live-league-group>.live-card{margin:0;min-width:0}
 #historyStats{display:block;clear:both;margin:18px 0 18px;position:relative;min-width:0}
 #historyStats .statgrid{gap:8px}
 #historyList{display:grid;gap:12px;clear:both;margin:0 0 18px;min-width:0;position:relative}
@@ -273,6 +275,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
  <div id="liveSummary" class="statgrid"></div>
  <div id="liveOpportunitySummary"></div>
  <div id="liveList"><div class="empty">Loading live matches…</div></div>
+ <details class="panel" id="liveValidation" style="margin-top:14px"><summary><strong>In-play estimate tracking</strong></summary><div id="liveValidationStats" class="muted smalltext" style="margin-top:10px">Predictions will be recorded as live matches update. Historical scores will be used to assess resolved snapshots when available.</div></details>
  </section>
 <section id="accumulator" hidden>
  <h2>Your accumulator</h2><p class="muted">Save individual match selections here. This is not a bet or bookmaker connection.</p>
@@ -354,7 +357,7 @@ const state={
  matches:[],loaded:false,loading:false,topMode:false,
  acc:readStore("fp_acc",[]),history:readStore("fp_prediction_history",[]),
  lastTest:null,activeIndex:1,mode:"manual",manualIndex:1,minSample:100,
- liveMatches:[],liveStats:{},liveFilter:"all",liveLeagueFilter:"all",liveSituationFilter:"all",liveLoading:false,liveLastUpdated:null
+ liveMatches:[],liveStats:{},liveHistory:readStore("fp_live_prediction_history",[]),liveFilter:"all",liveLeagueFilter:"all",liveSituationFilter:"all",liveLoading:false,liveLastUpdated:null
 };
 
 function readStore(k,f){try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}}
@@ -757,6 +760,38 @@ function attachLivePredictions(matches){
   match.confidence=forecast.confidence;
  }
 }
+function liveOutcomeKey(m){return getOutcome(Number(m.homeScore),Number(m.awayScore))}
+function updateLiveHistory(completedMatches,liveMatches){
+ const history=Array.isArray(state.liveHistory)?state.liveHistory:[];
+ const byId=new Map(history.map(row=>[row.key,row]));
+ for(const match of completedMatches||[]){
+  if(!isFinished(match))continue;
+  const outcome=liveOutcomeKey(match),score=`${match.homeScore}–${match.awayScore}`,id=eventId(match);
+  for(const row of history){if(row.eventId===id){row.actualOutcome=outcome;row.actualScore=score}}
+ }
+ // Keep one snapshot per five-minute bucket, rather than duplicating every refresh.
+ for(const match of liveMatches||[]){
+  if(!validScore(match))continue;
+  const assessment=liveOpportunityAssessment(match,state.liveStats[eventId(match)]);
+  if(assessment.minute===null)continue;
+  const bucket=Math.floor(assessment.minute/5)*5,key=`${eventId(match)}_${bucket}`;
+  if(byId.has(key))continue;
+  const live=assessment.live;
+  const row={key,eventId:eventId(match),leagueId:match.leagueId,league:match.league,home:match.home,away:match.away,minute:assessment.minute,bucket,score:`${assessment.hs}–${assessment.as}`,probs:{H:live.H/100,D:live.D/100,A:live.A/100},preGame:{H:Number(match.probs?.H??1/3),D:Number(match.probs?.D??1/3),A:Number(match.probs?.A??1/3)},savedAt:new Date().toISOString()};
+  history.push(row);byId.set(key,row);
+ }
+ state.liveHistory=history.slice(-3000);store("fp_live_prediction_history",state.liveHistory);
+}
+function renderLiveValidation(){
+ const target=$("liveValidationStats");if(!target)return;
+ const all=state.liveHistory||[],resolved=all.filter(row=>row.actualOutcome&&row.probs&&["H","D","A"].every(k=>Number.isFinite(Number(row.probs[k]))));
+ if(!resolved.length){target.innerHTML=`<p>Saved snapshots: ${all.length}. Resolved snapshots: 0.</p><p>As matches finish and the feed reports final scores, this panel will assess saved estimates against actual outcomes. The app must be open during live matches and revisited after they finish; it cannot backfill historical in-play data.</p>`;return;}
+ const score=row=>["H","D","A"].reduce((v,k)=>v+Math.pow(Number(row.probs[k])-(row.actualOutcome===k?1:0),2),0);
+ const brier=resolved.reduce((sum,row)=>sum+score(row),0)/resolved.length,byMinute={};
+ for(const row of resolved){const minute=Number(row.minute??row.bucket??0),start=Math.floor(minute/15)*15,label=`${start}–${start+14} min`;byMinute[label]??={n:0,brier:0};byMinute[label].n++;byMinute[label].brier+=score(row)}
+ target.innerHTML=`<div class="live-opportunity-grid"><div class="live-opportunity-metric"><strong>${resolved.length}</strong><span>Resolved snapshots</span></div><div class="live-opportunity-metric"><strong>${brier.toFixed(3)}</strong><span>Mean Brier score · lower is better</span></div><div class="live-opportunity-metric"><strong>${all.length}</strong><span>Total saved snapshots</span></div></div><p>Snapshots are grouped into five-minute buckets per match. Results are only scored once the feed supplies a final score. This is a self-collected early sample—not proof of calibration—and may be biased toward matches while the app is open.</p><div class="tablewrap"><table><thead><tr><th>Match minute</th><th>Samples</th><th>Mean Brier</th></tr></thead><tbody>${Object.entries(byMinute).sort((a,b)=>Number(a[0].split("–")[0])-Number(b[0].split("–")[0])).map(([label,v])=>`<tr><td>${label}</td><td>${v.n}</td><td>${(v.brier/v.n).toFixed(3)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
 async function fetchLive(){
  if(state.liveLoading)return;state.liveLoading=true;$("liveRefresh").disabled=true;$("liveStatus").textContent="Updating…";
  try{
@@ -767,7 +802,8 @@ async function fetchLive(){
   }));
   results.forEach(x=>all.push(...x));
   const unique=new Map();all.forEach(m=>unique.set(eventId(m),m));
-  state.liveMatches=[...unique.values()].filter(isLive).sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const scoreboardEvents=[...unique.values()];
+  state.liveMatches=scoreboardEvents.filter(isLive).sort((a,b)=>new Date(a.date)-new Date(b.date));
   attachLivePredictions(state.liveMatches);
   const stats={};
   await Promise.all(state.liveMatches.map(async m=>{
@@ -776,7 +812,7 @@ async function fetchLive(){
     if(r.ok)stats[eventId(m)]=extractStats(await r.json(),m);
    }catch(e){console.warn("Live match stats unavailable",m.id,e.message)}
   }));
-  state.liveStats=stats;state.liveLastUpdated=new Date();$("liveStatus").textContent=state.liveMatches.length?`${state.liveMatches.length} LIVE MATCH${state.liveMatches.length===1?"":"ES"}`:"NO LIVE MATCHES";
+  state.liveStats=stats;updateLiveHistory(scoreboardEvents.filter(isFinished),state.liveMatches);state.liveLastUpdated=new Date();$("liveStatus").textContent=state.liveMatches.length?`${state.liveMatches.length} LIVE MATCH${state.liveMatches.length===1?"":"ES"}`:"NO LIVE MATCHES";
   $("liveUpdated").textContent="Updated "+state.liveLastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});
  }catch(e){$("liveStatus").textContent="Feed unavailable";$("liveUpdated").textContent="Could not refresh the live feed."}
  finally{state.liveLoading=false;$("liveRefresh").disabled=false;renderLive()}
@@ -883,9 +919,16 @@ function liveOpportunityAssessment(m,stats){
  }
  return{minute,hasScore,hs,as,homeStats,awayStats,available,live,teams:teamData,drawChance:live.D,pressure};
 }
+function integerOutcomePercents(p){
+ const keys=["H","D","A"],raw=keys.map(k=>Math.max(0,Number(p?.[k]??1/3))*100),floors=raw.map(Math.floor);
+ let remaining=100-floors.reduce((sum,n)=>sum+n,0);
+ const order=raw.map((v,i)=>({i,frac:v-Math.floor(v)})).sort((a,b)=>b.frac-a.frac);
+ for(let i=0;i<remaining;i++)floors[order[i%order.length].i]++;
+ return{H:floors[0],D:floors[1],A:floors[2]};
+}
 function liveCard(m,index,mode="all"){
  const id=eventId(m),stats=state.liveStats[id],a=liveOpportunityAssessment(m,stats),hasScore=a.hasScore;
- const probs=m.probs||{H:1/3,D:1/3,A:1/3},status=getLiveMinute(m),scoreLine=hasScore?`${a.hs}–${a.as}`:"—";
+ const probs=m.probs||{H:1/3,D:1/3,A:1/3},prePct=integerOutcomePercents(probs),status=getLiveMinute(m),scoreLine=hasScore?`${a.hs}–${a.as}`:"—";
  const candidates= a.teams.filter(t=>!hasScore || t.score<=t.oppScore);
  const shownTeams=candidates.filter(t=>state.liveSituationFilter==="all" || (state.liveSituationFilter==="drawing"&&t.score===t.oppScore) || (state.liveSituationFilter==="losing"&&t.score<t.oppScore));
  const ranked=[...shownTeams].sort((x,y)=>y.opportunityScore-x.opportunityScore);
@@ -894,22 +937,23 @@ function liveCard(m,index,mode="all"){
  if(a.minute!==null)reasons.push(`${a.minute} minutes elapsed; time remaining affects the estimate.`);else reasons.push("Match minute was not available, so a neutral time assumption is used.");
  if(hasScore)reasons.push(`Current score is ${a.hs}–${a.as}. Only teams drawing or behind are highlighted.`);else reasons.push("A usable score was not supplied by the live feed.");
  if(a.available)reasons.push(`${a.available} categories of live statistics were available to adjust the estimates.`);
- reasons.push("The balanced opportunity score is used to rank relevant teams in Opportunities view; it is a sorting aid, not a probability.");
+ reasons.push("The balanced opportunity score combines live win chance, movement from the pre-game estimate, underdog status and available match stats; it is a sorting aid, not a probability.");
  const teamCards=shownTeams.map(t=>{
    const drawing=hasScore&&t.score===t.oppScore,losing=hasScore&&t.score<t.oppScore;
    const label=drawing?"Currently drawing":losing?`Currently behind by ${t.oppScore-t.score}`:"Score unavailable";
    const winLabel=drawing?"Chance to win":"Comeback to win",drawLabel=drawing?"Chance of a draw":"Comeback to draw";
-   return `<div class="team-estimate"><div class="row between wrap"><strong>${esc(t.name)}</strong><span class="tag">${label}</span></div><div class="meta">Pre-game win: ${Math.round(t.pre)}% · ${t.delta>=0?"+":""}${t.delta.toFixed(1)} pts vs pre-game</div><div class="live-prob"><div class="live-percent-card win"><span>${winLabel}</span><strong>${t.live.toFixed(1)}%</strong><div class="live-probbar"><span style="width:${clamp(t.live,0,100)}%"></span></div><small>Estimated chance of this team winning</small></div><div class="live-percent-card draw"><span>${drawLabel}</span><strong>${a.live.D.toFixed(1)}%</strong><div class="live-probbar"><span style="width:${clamp(a.live.D,0,100)}%"></span></div><small>Estimated chance of the match finishing level</small></div></div></div>`;
+   const explanation=t.delta>=10?`Win estimate up ${t.delta.toFixed(1)} points from pre-game.`:t.pre<25&&t.delta>0?"Pre-game underdog with an improved live outlook.":t.pressure>.08&&a.available?"Available live stats lean in this team's favour.":a.minute!==null&&a.minute>=80?"Late-game situation; limited time remains.":t.delta>0?"Live win estimate has improved from pre-game.":"Live estimate reflects score, time and available stats.";
+   return `<div class="team-estimate"><div class="row between wrap"><strong>${esc(t.name)}</strong><span class="tag">${label}</span></div><div class="meta">Pre-game win: ${Math.round(t.pre)}% · ${t.delta>=0?"+":""}${t.delta.toFixed(1)} pts vs pre-game</div><div class="muted smalltext" style="margin-top:4px">${esc(explanation)}</div><div class="live-prob"><div class="live-percent-card win"><span>${winLabel}</span><strong>${t.live.toFixed(1)}%</strong><div class="live-probbar"><span style="width:${clamp(t.live,0,100)}%"></span></div><small>Estimated chance of this team winning</small></div><div class="live-percent-card draw"><span>${drawLabel}</span><strong>${a.live.D.toFixed(1)}%</strong><div class="live-probbar"><span style="width:${clamp(a.live.D,0,100)}%"></span></div><small>Estimated chance of the match finishing level</small></div></div></div>`;
  }).join("");
  const demoTag=`<span class="tag"><span class="live-pulse"></span>LIVE DATA</span>`;
  const modeLabel=mode==="opportunity"?`OPPORTUNITY #${index+1}`:`LIVE MATCH #${index+1}`;
  return `<article class="live-card ${leader&&leader.opportunityScore>=60?"priority":""}">
   <div class="row between wrap"><span class="live-rank">${modeLabel}</span>${demoTag}</div>
   <div class="meta" style="margin-top:7px">${esc(m.league||"League")} · ${esc(m.statusName||"Live match")}</div>
-  <div class="row between" style="margin:12px 0;gap:6px"><div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-game win: ${Math.round(probs.H*100)}%</div></div><div style="text-align:center;min-width:82px"><div class="live-score">${scoreLine}</div><div class="live-minute">${esc(status)}</div></div><div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-game win: ${Math.round(probs.A*100)}%</div></div></div>
+  <div class="row between" style="margin:12px 0;gap:6px"><div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-game win: ${prePct.H}%</div></div><div style="text-align:center;min-width:82px"><div class="live-score">${scoreLine}</div><div class="live-minute">${esc(status)}</div></div><div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-game win: ${prePct.A}%</div></div></div>
   ${shownTeams.length?teamCards:`<div class="notice">No drawing or losing team matches the current situation filter.</div>`}
-  <div class="row wrap"><span class="tag">Pre-game pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${a.available?"Live stats available":"Limited live stats"}</span></div>
-  <details><summary>Match stats &amp; estimate evidence</summary><div class="explain"><div class="analytics-grid"><div class="analytics-card full"><h4>Live statistics · Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div><div class="analytics-card"><h4>Factors behind the estimate</h4><ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div><div class="analytics-card"><h4>Pre-game outcome probabilities</h4><div class="live-prob"><div class="live-percent-card"><span>Home win</span><strong>${Math.round(probs.H*100)}%</strong></div><div class="live-percent-card"><span>Draw</span><strong>${Math.round(probs.D*100)}%</strong></div><div class="live-percent-card"><span>Away win</span><strong>${Math.round(probs.A*100)}%</strong></div></div><p class="analytics-note">Live chances are heuristic estimates and have not been calibrated against historical in-play outcomes.</p></div></div><div class="notice"><strong>Important:</strong> pre-game predictions are a baseline, not live market odds, so these estimates cannot establish betting value.</div></div></details>
+  <div class="row wrap"><span class="tag">Pre-game pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${a.available?`Stats: ${a.available}/5 indicators`:"Score/time only"}</span></div>
+  <details><summary>Match stats &amp; estimate evidence</summary><div class="explain"><div class="analytics-grid"><div class="analytics-card full"><h4>Live statistics · Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div><div class="analytics-card"><h4>Factors behind the estimate</h4><ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div><div class="analytics-card"><h4>Pre-game outcome probabilities</h4><div class="live-prob"><div class="live-percent-card"><span>Home win</span><strong>${prePct.H}%</strong></div><div class="live-percent-card"><span>Draw</span><strong>${prePct.D}%</strong></div><div class="live-percent-card"><span>Away win</span><strong>${prePct.A}%</strong></div></div><p class="analytics-note">Live chances are heuristic estimates and have not been calibrated against historical in-play outcomes.</p></div></div><div class="notice"><strong>Important:</strong> pre-game predictions are a baseline, not live market odds, so these estimates cannot establish betting value.</div></div></details>
   <div class="live-source">ESPN scoreboard${stats?" and match-summary feed":" feed"} · ${state.liveLastUpdated?"updated "+state.liveLastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"update time unavailable"}</div>
  </article>`;
 }
@@ -919,24 +963,23 @@ function renderLive(){
  const league=state.liveLeagueFilter||"all";
  let matches=all.filter(m=>league==="all"||m.leagueId===league);
  const assess=m=>liveOpportunityAssessment(m,state.liveStats[eventId(m)]);
- const situationMatches=m=>{
-  const a=assess(m);if(!a.hasScore)return state.liveSituationFilter==="all";
-  if(state.liveSituationFilter==="drawing")return a.hs===a.as;
-  if(state.liveSituationFilter==="losing")return a.hs!==a.as;
-  return true;
- };
+ const situationMatches=m=>{const a=assess(m);if(!a.hasScore)return state.liveSituationFilter==="all";if(state.liveSituationFilter==="drawing")return a.hs===a.as;if(state.liveSituationFilter==="losing")return a.hs!==a.as;return true};
  matches=matches.filter(situationMatches);
  const eligible=[];
- matches.forEach(m=>{
-  const a=assess(m);
-  if(a.hasScore)a.teams.filter(t=>t.score<=t.oppScore).forEach(t=>eligible.push({team:t,match:m,assessment:a}));
- });
- const positive=eligible.filter(x=>x.team.delta>0).sort((x,y)=>y.team.delta-x.team.delta).slice(0,3);
- $("liveSummary").innerHTML=`<div class="stat"><span class="muted smalltext">Live matches shown</span><strong>${matches.length}</strong></div><div class="stat"><span class="muted smalltext">Drawing / losing teams</span><strong>${eligible.length}</strong></div>`;
+ matches.forEach(m=>{const a=assess(m);if(a.hasScore)a.teams.filter(t=>t.score<=t.oppScore).forEach(t=>eligible.push({team:t,match:m,assessment:a}))});
+ // Balanced ranking for the summary; only positive changes from pre-game are highlighted.
+ const positive=eligible.filter(x=>x.team.delta>0).sort((x,y)=>y.team.opportunityScore-x.team.opportunityScore||y.team.delta-x.team.delta).slice(0,3);
+ $("liveSummary").innerHTML=`<div class="stat"><span class="muted smalltext">Live matches shown</span><strong>${matches.length}</strong></div>`;
+ renderLiveValidation();
  if(!all.length){$("liveOpportunitySummary").innerHTML="";$("liveList").innerHTML=`<div class="empty">No live matches were returned by the feed right now. Refresh later to check again. The live feed may not cover every competition or update instantly.</div>`;return;}
- $("liveOpportunitySummary").innerHTML=positive.length?`<div class="panel" style="margin-bottom:14px"><div class="row between wrap"><h3 style="margin:0">Biggest positive shifts vs pre-game</h3><span class="tag">Signals to investigate</span></div><p class="muted smalltext" style="margin:6px 0 10px">These drawing or losing teams have the largest increases in estimated win chance versus their pre-game prediction. This is a model-based signal, not confirmed betting value or a live-odds comparison.</p><div class="live-opportunity-grid">${positive.map(x=>`<div class="live-opportunity-metric signal"><strong>${x.team.delta>=0?"+":""}${x.team.delta.toFixed(1)} pts</strong><span>${esc(x.team.name)} · ${esc(x.match.home)} vs ${esc(x.match.away)}</span><div style="margin-top:6px;font-size:12px;color:var(--text)">Live win chance: ${x.team.live.toFixed(1)}%</div><div style="font-size:11px;color:var(--muted)">${x.team.score}–${x.team.oppScore} · ${esc(x.match.statusName||"Live")}</div></div>`).join("")}</div></div>`:`<div class="panel" style="margin-bottom:14px"><h3 style="margin:0 0 5px">Potential opportunity signals</h3><p class="muted smalltext">No drawing or losing team currently has a positive change from its pre-game win estimate in the selected matches.</p></div>`;
+ $("liveOpportunitySummary").innerHTML=positive.length?`<div class="panel" style="margin-bottom:14px"><div class="row between wrap"><h3 style="margin:0">Potential opportunities to investigate</h3><span class="tag">Balanced ranking</span></div><p class="muted smalltext" style="margin:6px 0 10px">Up to three drawing or losing teams with a positive change from pre-game, ranked by a balanced score using live win chance, pre-game movement, underdog status and available match stats. This is a model signal—not confirmed betting value or a live-odds comparison.</p><div class="live-opportunity-grid">${positive.map(x=>{const a=x.assessment,t=x.team;const why=t.delta>=10?`Win estimate up ${t.delta.toFixed(1)} points.`:t.pre<25?"Pre-game underdog with improved outlook.":a.available?"Balanced score includes available live stats.":"Live outlook improved from pre-game.";return`<div class="live-opportunity-metric signal"><strong>${esc(t.name)}</strong><span>${esc(x.match.home)} vs ${esc(x.match.away)} · ${esc(x.match.league||"League")}</span><div style="margin-top:7px;font-size:12px;color:var(--text)">Live win chance: ${t.live.toFixed(1)}%</div><div style="font-size:11px;color:var(--muted)">Pre-game: ${Math.round(t.pre)}% · Change: ${t.delta>=0?"+":""}${t.delta.toFixed(1)} pts</div><div style="font-size:11px;color:var(--muted)">${t.score}–${t.oppScore} · ${esc(x.match.statusName||"Live")}</div><div style="font-size:11px;margin-top:6px;color:var(--text)">${esc(why)}</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Opportunity score ${t.opportunityScore}/100 · not a probability</div></div>`}).join("")}</div></div>`:`<div class="panel" style="margin-bottom:14px"><h3 style="margin:0 0 5px">Potential opportunities to investigate</h3><p class="muted smalltext">No drawing or losing team currently has a positive change in estimated win chance from its pre-game prediction in the selected matches.</p></div>`;
  matches.sort((x,y)=>new Date(x.date)-new Date(y.date));
- $("liveList").innerHTML=matches.length?matches.map((m,i)=>liveCard(m,i,"all")).join(""):`<div class="empty">No live matches match this filter right now.</div>`;
+ if(!matches.length){$("liveList").innerHTML=`<div class="empty">No live matches match this filter right now.</div>`;return;}
+ if(league==="all"){
+  const grouped=new Map();for(const m of matches){const key=m.league||LEAGUES[m.leagueId]||m.leagueId;if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(m)}
+  let index=0;
+  $("liveList").innerHTML=[...grouped.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([name,rows])=>`<section class="live-league-group"><div class="row between wrap" style="margin:6px 0 10px"><h3 style="margin:0">${esc(name)}</h3><span class="tag">${rows.length} ${rows.length===1?"match":"matches"}</span></div>${rows.map(m=>liveCard(m,index++,"all")).join("")}</section>`).join("");
+ }else{$("liveList").innerHTML=matches.map((m,i)=>liveCard(m,i,"all")).join("")}
 }
 function showTab(tab){
  document.querySelectorAll("nav button").forEach(button=>{
