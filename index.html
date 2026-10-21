@@ -827,48 +827,58 @@ function getLiveMinute(m){
  if(m.statusName)return m.statusName;
  return m.state==="in"?"In progress":"Live";
 }
+function getElapsedLiveMinute(m){
+ const clockMatch=String(m.clock||"").match(/(\d{1,3})(?::(\d{2}))?/);
+ const status=String(m.statusName||"");
+ const added=status.match(/(\d{1,3})\s*\+\s*(\d{1,2})/);
+ if(added)return clamp(Number(added[1])+Number(added[2]),0,135);
+ if(clockMatch)return clamp(Number(clockMatch[1])+(Number(clockMatch[2]||0)/60),0,135);
+ const statusMinute=status.match(/(\d{1,3})/);
+ return statusMinute?clamp(Number(statusMinute[1]),0,135):null;
+}
+function poissonProbabilities(lambda,maxGoals=8){
+ const out=[Math.exp(-lambda)];
+ for(let k=1;k<=maxGoals;k++)out[k]=out[k-1]*lambda/k;
+ const total=out.reduce((a,b)=>a+b,0)||1;
+ return out.map(v=>v/total);
+}
+function scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redDiff,redCardsKnown){
+ // Approximate goals still to come. At 90 minutes, assume about six minutes of stoppage time remain unless the feed gives a later minute.
+ const endMinute=96;
+ const remaining=minute===null?0.5:clamp((endMinute-minute)/90,0,1);
+ const totalRemainingGoals=2.55*remaining;
+ // Pre-game strength, live pressure and red cards affect how remaining goals are split, not whether an already-level score is treated as a likely draw.
+ const preShare=homeProb/Math.max(.001,homeProb+awayProb);
+ let homeShare=clamp(preShare + pressure*.20 + (redCardsKnown?redDiff*.075:0),.12,.88);
+ const homeLambda=totalRemainingGoals*homeShare;
+ const awayLambda=totalRemainingGoals*(1-homeShare);
+ const hp=poissonProbabilities(homeLambda),ap=poissonProbabilities(awayLambda);
+ let H=0,D=0,A=0;
+ for(let hg=0;hg<hp.length;hg++)for(let ag=0;ag<ap.length;ag++){
+  const prob=hp[hg]*ap[ag],diff=(hs+hg)-(as+ag);
+  if(diff>0)H+=prob;else if(diff===0)D+=prob;else A+=prob;
+ }
+ const total=H+D+A||1;
+ return {H:H/total*100,D:D/total*100,A:A/total*100,remainingMinutes:Math.max(0,endMinute-(minute??51)),homeLambda,awayLambda};
+}
 function liveAssessment(m,stats){
-  const elapsed=parseInt(String(m.clock||"").split(":")[0],10);
-  const statusMinute=String(m.statusName||"").match(/(\d{1,3})(?:\s*\+\s*\d+)?['’]?/);
-  const minute=Number.isFinite(elapsed)?clamp(elapsed,0,130):statusMinute?clamp(Number(statusMinute[1]),0,130):null;
-  const hasScore=validScore(m),hs=hasScore?Number(m.homeScore):NaN,as=hasScore?Number(m.awayScore):NaN;
-  const behindHome=hasScore&&hs<as,behindAway=hasScore&&as<hs;
-  const trailingSide=behindHome?"home":behindAway?"away":null,p=m.probs||{H:1/3,D:1/3,A:1/3};
-  const homeProb=Number(p.H??1/3),awayProb=Number(p.A??1/3),drawProb=Number(p.D??1/3);
-  const homeStats=stats?.home||{},awayStats=stats?.away||{};
-  const hShots=statNum(homeStats.shots),aShots=statNum(awayStats.shots),hTarget=statNum(homeStats.shotsOnTarget),aTarget=statNum(awayStats.shotsOnTarget);
-  const hPoss=statNum(homeStats.possession),aPoss=statNum(awayStats.possession),hXg=statNum(homeStats.xg),aXg=statNum(awayStats.xg),hRed=statNum(homeStats.redCards),aRed=statNum(awayStats.redCards);
-  let hPressure=0,aPressure=0,available=0;
-  if(hShots!==null&&aShots!==null){available++;hPressure+=(hShots-aShots)*1.1;aPressure+=(aShots-hShots)*1.1}
-  if(hTarget!==null&&aTarget!==null){available++;hPressure+=(hTarget-aTarget)*3;aPressure+=(aTarget-hTarget)*3}
-  if(hPoss!==null&&aPoss!==null){available++;hPressure+=(hPoss-aPoss)*.08;aPressure+=(aPoss-hPoss)*.08}
-  if(hXg!==null&&aXg!==null){available++;hPressure+=(hXg-aXg)*18;aPressure+=(aXg-hXg)*18}
-  if(hRed!==null&&aRed!==null){available++;hPressure+=(aRed-hRed)*8;aPressure+=(hRed-aRed)*8}
-  if(!trailingSide)return{trailingSide:null,winChance:0,drawChance:0,minute,available,reasons:["Only teams currently behind are included in comeback rankings."],risks:[],homeStats,awayStats,homeProb,awayProb,drawProb};
-  const isHome=trailingSide==="home",team=isHome?m.home:m.away,opponent=isHome?m.away:m.home;
-  const ownScore=isHome?hs:as,oppScore=isHome?as:hs,deficit=oppScore-ownScore,priorWin=isHome?homeProb:awayProb;
-  const ownPressure=isHome?hPressure:aPressure,oppPressure=isHome?aPressure:hPressure;
-  const pressureDelta=clamp((ownPressure-oppPressure)/100,-.35,.35),remaining=minute===null?.55:clamp((96-minute)/90,0,1);
-  const deficitWin=deficit===1?.72:deficit===2?.28:deficit===3?.09:.025,deficitDraw=deficit===1?1:deficit===2?.34:deficit===3?.10:.025;
-  const timeWin=.08+.95*Math.pow(remaining,1.35),timeDraw=.10+.90*Math.pow(remaining,1.2);
-  const redAdvantage=isHome?(aRed??0)-(hRed??0):(hRed??0)-(aRed??0);
-  const redFactor=clamp(1+redAdvantage*.12,.72,1.25),pressureFactor=clamp(1+pressureDelta,.65,1.35);
-  let winChance=100*priorWin*deficitWin*timeWin*pressureFactor*redFactor;
-  let drawChance=100*(drawProb*.62+priorWin*.30)*deficitDraw*timeDraw*pressureFactor*redFactor;
-  if(minute!==null&&minute>=85){winChance*=.55;drawChance*=.62}
-  if(minute!==null&&minute>=90){winChance*=.45;drawChance*=.50}
-  winChance=clamp(winChance,0,65);drawChance=clamp(drawChance,0,70);
-  const reasons=[`${team} had a ${Math.round(priorWin*100)}% pre-match win estimate and is currently ${deficit} goal${deficit===1?"":"s"} behind.`],risks=[];
-  if(minute!==null)reasons.push(`${minute} minutes elapsed; the estimate discounts scenarios as time runs out.`);
-  if(hShots!==null&&aShots!==null){if(isHome?hShots>aShots:aShots>hShots)reasons.push(`${team} leads total shots (${isHome?hShots:aShots} vs ${isHome?aShots:hShots}).`);else risks.push(`${team} does not lead total shots (${isHome?hShots:aShots} vs ${isHome?aShots:hShots}).`)}
-  if(hTarget!==null&&aTarget!==null){if(isHome?hTarget>aTarget:aTarget>hTarget)reasons.push(`Shots on target favour ${team} (${isHome?hTarget:aTarget} vs ${isHome?aTarget:hTarget}).`);else risks.push(`Shots on target do not favour ${team} (${isHome?hTarget:aTarget} vs ${isHome?aTarget:hTarget}).`)}
-  if(hXg!==null&&aXg!==null){if(isHome?hXg>aXg:aXg>hXg)reasons.push(`xG favours ${team} (${(isHome?hXg:aXg).toFixed(2)} vs ${(isHome?aXg:hXg).toFixed(2)}).`);else risks.push(`xG does not favour ${team} (${(isHome?hXg:aXg).toFixed(2)} vs ${isHome?aXg:hXg}).`)}
-  const ownRed=isHome?hRed:aRed,oppRed=isHome?aRed:hRed;
-  if(ownRed!==null&&oppRed!==null&&oppRed>ownRed)reasons.push(`${opponent} has more red cards, which may help ${team}.`);
-  if(ownRed!==null&&ownRed>0)risks.push(`${team} has ${ownRed} red card${ownRed===1?"":"s"}.`);
-  if(!available)risks.push("Detailed in-play statistics are unavailable; estimates rely on pre-match probabilities, score and time.");
-  if(minute===null)risks.push("Match minute is uncertain, so the time adjustment is less reliable.");
-  return{trailingSide,team,opponent,deficit,winChance:Math.round(winChance*10)/10,drawChance:Math.round(drawChance*10)/10,minute,available,reasons,risks,homeStats,awayStats,homeProb,awayProb,drawProb};
+ const a=liveOpportunityAssessment(m,stats);
+ const hasScore=a.hasScore,hs=a.hs,as=a.as;
+ const behindHome=hasScore&&hs<as,behindAway=hasScore&&as<hs;
+ const trailingSide=behindHome?"home":behindAway?"away":null;
+ const homeStats=a.homeStats||{},awayStats=a.awayStats||{};
+ if(!trailingSide)return{trailingSide:null,winChance:0,drawChance:a.live.D,minute:a.minute,available:a.available,reasons:["No team is currently behind; the live outcome estimates remain available in the match card."],risks:[],homeStats,awayStats,homeProb:a.homeProb,awayProb:a.awayProb,drawProb:a.preDraw};
+ const isHome=trailingSide==="home",team=isHome?m.home:m.away,opponent=isHome?m.away:m.home;
+ const deficit=Math.abs(hs-as),winChance=isHome?a.live.H:a.live.A,drawChance=a.live.D;
+ const ownStats=isHome?homeStats:awayStats,oppStats=isHome?awayStats:homeStats;
+ const reasons=[`${team} is ${deficit} goal${deficit===1?"":"s"} behind at ${hs}–${as}.`],risks=[];
+ if(a.minute!==null)reasons.push(`${Math.max(0,Math.round(a.minute))} minutes elapsed; the remaining-time model sharply reduces comeback chances near full time.`);
+ if(a.hRed!==null&&a.aRed!==null&&(a.hRed>0||a.aRed>0))reasons.push(`Red cards are included in the live outcome estimate (${m.home}: ${a.hRed}; ${m.away}: ${a.aRed}).`);
+ if(a.available)reasons.push(`${a.available} categories of live statistics are available and can influence the distribution of remaining goals.`);
+ if(!a.available)risks.push("Detailed in-play statistics are unavailable; the estimate relies mainly on score, time and pre-game strength.");
+ if(a.minute===null)risks.push("Match minute is uncertain, so the remaining-time estimate is less reliable.");
+ if(a.minute!==null&&a.minute>=90)reasons.push("At 90 minutes, the model assumes a short stoppage-time window; win chances are low when the score is level or the team is trailing.");
+ return{trailingSide,team,opponent,deficit,winChance:Math.round(winChance*10)/10,drawChance:Math.round(drawChance*10)/10,minute:a.minute,available:a.available,reasons,risks,homeStats,awayStats,homeProb:a.homeProb,awayProb:a.awayProb,drawProb:a.preDraw};
 }
 function liveStatRow(label,h,a,suffix=""){
  const hn=statNum(h),an=statNum(a),max=Math.max(hn??0,an??0,1),hp=hn===null?0:hn/max*100,ap=an===null?0:an/max*100;
@@ -885,9 +895,7 @@ function liveStatsHtml(m,stats){
 function liveOpportunityAssessment(m,stats){
  const p=m.probs||{H:1/3,D:1/3,A:1/3};
  const homeProb=clamp(Number(p.H??1/3),.001,.998),awayProb=clamp(Number(p.A??1/3),.001,.998),drawProb=clamp(Number(p.D??1/3),.001,.998);
- const elapsed=parseInt(String(m.clock||"").split(":")[0],10);
- const statusMinute=String(m.statusName||"").match(/(\d{1,3})(?:\s*\+\s*\d+)?['’]?/);
- const minute=Number.isFinite(elapsed)?clamp(elapsed,0,130):statusMinute?clamp(Number(statusMinute[1]),0,130):null;
+ const minute=getElapsedLiveMinute(m);
  const hasScore=validScore(m),hs=hasScore?Number(m.homeScore):0,as=hasScore?Number(m.awayScore):0;
  const homeStats=stats?.home||{},awayStats=stats?.away||{};
  const hShots=statNum(homeStats.shots),aShots=statNum(awayStats.shots),hTarget=statNum(homeStats.shotsOnTarget),aTarget=statNum(awayStats.shotsOnTarget);
@@ -901,19 +909,20 @@ function liveOpportunityAssessment(m,stats){
  if(hXg!==null&&aXg!==null){available++;hPressure+=(hXg-aXg)*18;aPressure+=(aXg-hXg)*18}
  if(hRed!==null&&aRed!==null){available++;hPressure+=(aRed-hRed)*8;aPressure+=(hRed-aRed)*8}
  const pressure=clamp((hPressure-aPressure)/100,-.55,.55);
- const progress=minute===null?.5:clamp(minute/90,0,1.35);
- const scoreImpact=hasScore?(hs-as)*(.30+1.25*progress):0;
- // Heuristic reweighting of pre-game probabilities by the live score, clock and available pressure stats.
- let homeWeight=homeProb*Math.exp(scoreImpact+pressure*.65);
- let awayWeight=awayProb*Math.exp(-scoreImpact-pressure*.65);
- const drawWeight=drawProb*Math.exp(-(hasScore?Math.abs(hs-as):0)*(.28+.65*progress)+progress*.48);
- // A sending-off changes the manpower balance. Apply a stronger adjustment when more match time remains.
- const timeRemaining=minute===null?.55:clamp((90-minute)/90,0,1);
+ // Red cards alter the share of remaining scoring chances. The scoreline and time left drive the outcome probabilities.
+ const timeRemaining=minute===null?.5:clamp((96-minute)/90,0,1);
  const redCardImpact=redCardsKnown?clamp(redDiff*(.22+.50*timeRemaining),-.80,.80):0;
- homeWeight*=Math.exp(redCardImpact/2);
- awayWeight*=Math.exp(-redCardImpact/2);
- const total=homeWeight+awayWeight+drawWeight||1;
- const live={H:homeWeight/total*100,D:drawWeight/total*100,A:awayWeight/total*100};
+ const preDraw=drawProb;
+ let live;
+ if(hasScore){
+  live=scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redCardsKnown?redDiff:0,redCardsKnown);
+ }else{
+  // Without a usable score, retain a conservative pre-game baseline and only apply small pressure/manpower adjustments.
+  let homeWeight=homeProb*Math.exp(pressure*.25+redCardImpact/2),awayWeight=awayProb*Math.exp(-pressure*.25-redCardImpact/2),drawWeight=drawProb;
+  const total=homeWeight+awayWeight+drawWeight||1;
+  live={H:homeWeight/total*100,D:drawWeight/total*100,A:awayWeight/total*100};
+ }
+
  const teamData=[
   {side:"home",name:m.home,pre:homeProb*100,live:live.H,pressure:pressure,red:hRed,redAdvantage:redCardsKnown&&redDiff>0,score:hs,oppScore:as},
   {side:"away",name:m.away,pre:awayProb*100,live:live.A,pressure:-pressure,red:aRed,redAdvantage:redCardsKnown&&redDiff<0,score:as,oppScore:hs}
@@ -927,7 +936,7 @@ function liveOpportunityAssessment(m,stats){
   t.opportunityScore=Math.round(clamp(t.live*.48+upside*25+underdog*15+pressureScore*10,0,100));
   t.trailing=hasScore&&t.score<t.oppScore;
  }
- return{minute,hasScore,hs,as,homeStats,awayStats,available,live,teams:teamData,drawChance:live.D,pressure,hRed,aRed,redCardsKnown,redDiff,redCardImpact};
+ return{minute,hasScore,hs,as,homeStats,awayStats,available,live,teams:teamData,drawChance:live.D,pressure,hRed,aRed,redCardsKnown,redDiff,redCardImpact,homeProb,awayProb,preDraw};
 }
 function integerOutcomePercents(p){
  const keys=["H","D","A"],raw=keys.map(k=>Math.max(0,Number(p?.[k]??1/3))*100),floors=raw.map(Math.floor);
@@ -951,7 +960,7 @@ function liveCard(m,index,mode="all"){
   const redSummary=[a.hRed>0?`${m.home}: ${a.hRed}`:"",a.aRed>0?`${m.away}: ${a.aRed}`:""].filter(Boolean).join("; ");
   reasons.push(`Red-card adjustment applied (${redSummary}). The manpower effect is stronger earlier in the match and tapers as full time approaches.`);
  }else reasons.push("No red-card count was available from the match statistics feed; no red-card adjustment was assumed.");
- reasons.push("The balanced opportunity score combines live win chance, movement from the pre-game estimate, underdog status and available match stats; it is a sorting aid, not a probability.");
+ reasons.push("The live estimate models only goals remaining from the current score and time, using pre-game strength, available match pressure and red-card balance. It is heuristic and not calibrated; the opportunity score is a sorting aid, not a probability.");
  const teamCards=shownTeams.map(t=>{
    const drawing=hasScore&&t.score===t.oppScore,losing=hasScore&&t.score<t.oppScore;
    const label=drawing?"Currently drawing":losing?`Currently behind by ${t.oppScore-t.score}`:"Score unavailable";
@@ -971,7 +980,7 @@ function liveCard(m,index,mode="all"){
   <div class="row between" style="margin:12px 0;gap:6px"><div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-game win: ${prePct.H}%</div></div><div style="text-align:center;min-width:82px"><div class="live-score">${scoreLine}</div><div class="live-minute">${esc(status)}</div></div><div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-game win: ${prePct.A}%</div></div></div>
   ${shownTeams.length?teamCards:`<div class="notice">No drawing or losing team matches the current situation filter.</div>`}
   <div class="row wrap"><span class="tag">Pre-game pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${a.available?`Stats: ${a.available}/5 indicators`:"Score/time only"}</span></div>
-  <details><summary>Match stats &amp; estimate evidence</summary><div class="explain"><div class="analytics-grid"><div class="analytics-card full"><h4>Live statistics · Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div><div class="analytics-card"><h4>Factors behind the estimate</h4><ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div><div class="analytics-card"><h4>Pre-game outcome probabilities</h4><div class="live-prob"><div class="live-percent-card"><span>Home win</span><strong>${prePct.H}%</strong></div><div class="live-percent-card"><span>Draw</span><strong>${prePct.D}%</strong></div><div class="live-percent-card"><span>Away win</span><strong>${prePct.A}%</strong></div></div><p class="analytics-note">Live chances are heuristic estimates and have not been calibrated against historical in-play outcomes. Where the feed supplies red-card counts, the estimate adjusts the teams' relative win weights for the manpower difference, with a larger effect earlier in the match.</p></div></div><div class="notice"><strong>Important:</strong> pre-game predictions are a baseline, not live market odds, so these estimates cannot establish betting value.</div></div></details>
+  <details><summary>Match stats &amp; estimate evidence</summary><div class="explain"><div class="analytics-grid"><div class="analytics-card full"><h4>Live statistics · Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div><div class="analytics-card"><h4>Factors behind the estimate</h4><ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div><div class="analytics-card"><h4>Pre-game outcome probabilities</h4><div class="live-prob"><div class="live-percent-card"><span>Home win</span><strong>${prePct.H}%</strong></div><div class="live-percent-card"><span>Draw</span><strong>${prePct.D}%</strong></div><div class="live-percent-card"><span>Away win</span><strong>${prePct.A}%</strong></div></div><p class="analytics-note">Live chances are heuristic estimates and have not been calibrated against historical in-play outcomes. Scoreline and time remaining drive the probability of the final outcome; pre-game strength, available live pressure and red-card balance affect the expected distribution of remaining goals.</p></div></div><div class="notice"><strong>Important:</strong> pre-game predictions are a baseline, not live market odds, so these estimates cannot establish betting value.</div></div></details>
   <div class="live-source">ESPN scoreboard${stats?" and match-summary feed":" feed"} · ${state.liveLastUpdated?"updated "+state.liveLastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"update time unavailable"}</div>
  </article>`;
 }
