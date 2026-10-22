@@ -136,6 +136,18 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 .live-pressure-strip .home-fill{background:var(--green)}.live-pressure-strip .away-fill{background:var(--blue)}
 .goal-storm{display:inline-flex;align-items:center;gap:5px;background:#4d3018;border:1px solid #a96c2d;color:#ffe1b5;border-radius:8px;padding:5px 8px;font-size:11px;font-weight:900}
 .goal-storm-panel{background:linear-gradient(135deg,#402b1b,#1a2638 75%);border:1px solid #9a612a;border-radius:12px;padding:12px;margin:0 0 12px}
+.recent-goals-panel{border:1px solid var(--border);border-radius:12px;padding:11px 12px;margin:0 0 12px;background:var(--panel)}
+.recent-goal-row{display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:9px;align-items:center;padding:8px 9px;border-top:1px solid var(--border);border-radius:7px;font-size:12px}
+.recent-goal-row:first-of-type{border-top:0}
+.recent-goal-row .goal-age{font-size:10px;font-weight:900;letter-spacing:.04em;text-align:center;padding:5px 6px;border-radius:6px;background:#263448;color:#cbd5e1}
+.recent-goal-row.goal-now{background:#4a2028;border:1px solid #ff5368;box-shadow:0 0 0 1px #ff536822 inset}
+.recent-goal-row.goal-now .goal-age{background:#ff5368;color:#fff;animation:goalFlash 1s steps(2,start) infinite}
+.recent-goal-row.goal-two{background:#492d20;border:1px solid #ed8c45}
+.recent-goal-row.goal-two .goal-age{background:#ed8c45;color:#1c140e}
+.recent-goal-row.goal-five{background:#423a20;border:1px solid #b8a344}
+.recent-goal-row.goal-five .goal-age{background:#b8a344;color:#211d0c}
+@keyframes goalFlash{to{opacity:.55}}
+@media(prefers-reduced-motion:reduce){.recent-goal-row.goal-now .goal-age{animation:none}}
 .confidence-performance{margin-top:14px}
 .confidence-bar-row{display:grid;grid-template-columns:54px minmax(60px,1fr) 54px 62px;align-items:center;gap:8px;margin:9px 0;font-size:12px}
 .confidence-bar-track{height:10px;border-radius:7px;background:#34445a;overflow:hidden}
@@ -266,7 +278,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
   <div><label for="sort">Sort by</label><select id="sort"><option value="date">Kick-off date</option><option value="confidence">Confidence</option></select></div>
  </div>
  <div class="row wrap" style="margin-bottom:12px"><button class="btn" id="load">Load / refresh predictions</button><button class="btn secondary" id="top10">Show Top 10 picks</button><button class="btn secondary" id="goalThreats">Show Goal Threats</button></div>
- <div class="notice">Predictions use earlier completed league results. Expected goals are averages, not exact-score guarantees. Displayed scores are rounded estimates adjusted to agree with the predicted result. Confidence is an indicative model rating, not a guarantee. Probabilities are estimates, not betting advice.</div>
+ <div class="notice">Predictions use earlier completed league results. Expected goals are averages, not exact-score guarantees. Displayed scores are rounded estimates adjusted to agree with the predicted result. Confidence is an indicative model rating, not a guarantee. Ratings are capped at 6/10 unless both teams have at least 5 prior completed matches. Probabilities are estimates, not betting advice.</div>
  <div class="confidence-legend">
   <span class="tag confidence-high">🟢 Confidence 9–10</span><span class="tag confidence-medium">🟠 Confidence 7–8</span><span class="tag confidence-low">🔴 Confidence 0–6</span>
  </div>
@@ -282,7 +294,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
   <p class="muted smalltext">All live scores in one place, with estimated win and draw chances for teams that are drawing or behind.</p>
   <div class="row between wrap"><span id="liveUpdated" class="smalltext muted">Waiting for data…</span><button id="liveRefresh" class="btn small secondary">Refresh live data</button></div>
  </div>
- <div class="notice"><strong>How to read this:</strong> in-play win and draw chances are heuristic estimates, not calibrated probabilities or betting advice. They use pre-game predictions, score, time and available match statistics. Live bookmaker odds are not available, so these estimates cannot establish betting value. Missing stats are never fabricated.</div>
+ <div id="recentGoals" aria-live="polite"></div>
  <div class="live-filter" id="liveFilters" aria-label="Filter live matches">
   <button class="active" data-situation="all">All games</button>
   <button data-situation="drawing">Drawing</button>
@@ -295,7 +307,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 
  </div>
  <div id="liveSummary" class="statgrid"></div>
- <div id="goalStormSummary"></div><div id="liveOpportunitySummary"></div>
+ <div id="goalStormSummary"></div>
  <div id="liveList"><div class="empty">Loading live matches…</div></div>
  <details class="panel" id="liveValidation" style="margin-top:14px"><summary><strong>In-play estimate tracking</strong></summary><div id="liveValidationStats" class="muted smalltext" style="margin-top:10px">Predictions will be recorded as live matches update. Historical scores will be used to assess resolved snapshots when available.</div></details>
  </section>
@@ -504,8 +516,10 @@ function calculatePrediction(m,previous,model){
  const hl=clamp(leagueHome*homeAttack*awayDefence*1.04,.15,4.2),al=clamp(leagueAway*awayAttack*homeDefence,.15,4.2);
  const dist=scoreDistribution(hl,al),probs=dist.probs,prediction=["H","D","A"].sort((x,y)=>probs[y]-probs[x])[0];
  const predictedScore=consistentPredictedScore(hl,al,prediction),sorted=Object.values(probs).sort((x,y)=>y-x),coverage=clamp(Math.min(h.count,a.count)/10,0,1);
- const confidence=clamp(Math.round(3+(sorted[0]-sorted[1])*16+coverage*2),1,9);
- return{probs,prediction,confidence,h,a,homeLambda:hl,awayLambda:al,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore,leagueAverage:la.all};
+ const rawConfidence=clamp(Math.round(3+(sorted[0]-sorted[1])*16+coverage*2),1,9);
+ // A rating cannot be high unless both teams have at least five completed prior matches.
+ const minTeamSample=Math.min(h.count,a.count),confidence=minTeamSample<5?Math.min(rawConfidence,6):rawConfidence;
+ return{probs,prediction,confidence,confidenceSample:minTeamSample,h,a,homeLambda:hl,awayLambda:al,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore,leagueAverage:la.all};
 }
 function updatePredictions(matches,index=state.activeIndex){
  const by={};for(const m of matches)(by[m.leagueId]??=[]).push(m);
@@ -582,7 +596,7 @@ function explainHtml(m){
  const fmt=f=>f.history.length?`${f.history.reduce((s,x)=>s+x.points,0)} points from the last ${f.history.length} league matches`:"not enough league history";
  return`<details><summary>Inside the Prediction · Why this prediction?</summary><div class="explain">${insidePredictionHtml(m)}<ul>
  <li><strong>Model pick:</strong> ${outcomeName(m.prediction)} (${Math.round(m.probs[m.prediction]*100)}%).</li>
- <li><strong>Confidence:</strong> ${m.confidence}/10. This is an indicative model rating, not a calibrated guarantee.</li>
+ <li><strong>Confidence:</strong> ${m.confidence}/10. This is an indicative model rating, not a calibrated guarantee.${Math.min(m.h?.count??0,m.a?.count??0)<5?" The rating is capped at 6/10 because at least one team has fewer than five prior completed matches.":" Both teams have at least five prior completed matches."}</li>
  <li><strong>Displayed predicted score:</strong> ${esc(m.home)} ${m.predictedScore} ${esc(m.away)}.</li>
  <li><strong>Expected goals:</strong> ${esc(m.home)} ${m.homeLambda.toFixed(2)}; ${esc(m.away)} ${m.awayLambda.toFixed(2)}.</li>
  <li><strong>Most probable exact score:</strong> ${m.mostLikelyScore} (${(m.scoreProbability*100).toFixed(1)}%).</li>
@@ -591,7 +605,7 @@ function explainHtml(m){
 }
 function matchCard(m){
  const id=eventId(m),added=state.acc.some(x=>x.id===id),shownScore=isFinished(m)?resultString(m):m.predictedScore;
- return`<article class="match"><div class="row between"><span class="league">${esc(m.league)}</span>${confidenceBadge(m.confidence)}</div>
+ return`<article class="match"><div class="row between"><span class="league">${esc(m.league)}</span><div class="row wrap">${confidenceBadge(m.confidence)}${Math.min(m.h?.count??0,m.a?.count??0)<5?`<span class="tag confidence-low" title="At least one team has fewer than five prior completed matches">Limited sample</span>`:""}</div></div>
  <div class="meta" style="margin:7px 0">${esc(fmtDate(m.date))}${m.venue?" · "+esc(m.venue):""}</div>
  <div class="row between"><div class="grow teamline">${esc(m.home)}<div class="meta">${m.h.count} prior league matches</div></div><strong style="white-space:nowrap;font-size:19px">${shownScore}</strong><div class="grow teamline" style="text-align:right">${esc(m.away)}<div class="meta">${m.a.count} prior league matches</div></div></div>
  ${probsHtml(m)}<div class="row between wrap"><span class="tag">Pick: ${outcomeName(m.prediction)}</span><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(id)}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>${explainHtml(m)}</article>`;
@@ -790,6 +804,12 @@ function extractStats(summary,m){
  for(const team of (summary?.boxscore?.teams||[]))readStats(sideFor(team),team.statistics||team.stats||[]);
  // Some event/competition responses attach the stats to the competitor object.
  for(const team of competitors)readStats(sideFor(team),team.statistics||team.stats||[]);
+ // Detect the latest goal from ESPN's play-by-play / key-event structures when supplied.
+ const plays=[...(Array.isArray(summary?.plays)?summary.plays:Array.isArray(summary?.plays?.items)?summary.plays.items:[]),...(Array.isArray(summary?.keyEvents)?summary.keyEvents:[]),...(Array.isArray(summary?.scoringPlays)?summary.scoringPlays:[]),...(Array.isArray(summary?.commentary)?summary.commentary:[])];
+ const minuteOf=play=>{const raw=play?.clock?.displayValue??play?.clock?.value??play?.time?.displayValue??play?.time??play?.displayClock??play?.minute??play?.period?.displayValue??"";const text=String(raw);const added=text.match(/(\d{1,3})\s*['′’]?\s*\+\s*(\d{1,2})/);if(added)return Number(added[1])+Number(added[2]);const match=text.match(/(\d{1,3})/);return match?Number(match[1]):null};
+ const isGoal=play=>play?.scoringPlay===true||play?.scoreValue>0||/\bgoal\b|penalty scored|own goal/i.test(String(play?.text||play?.shortText||play?.type?.text||play?.type?.name||play?.headline||""));
+ const goalPlays=plays.filter(isGoal).map(play=>{const side=sideFor(play);const rawStamp=play?.wallclock??play?.date??play?.timestamp??null;const stamp=rawStamp===null?null:(typeof rawStamp==="number"?(rawStamp<1e12?rawStamp*1000:rawStamp):Date.parse(String(rawStamp)));return{side,minute:minuteOf(play),timestamp:Number.isFinite(stamp)?stamp:null,text:String(play?.text||play?.shortText||play?.type?.text||"Goal"),scorer:String(play?.athlete?.displayName||play?.participants?.[0]?.athlete?.displayName||play?.player?.displayName||"")}}).filter(g=>g.minute!==null).sort((a,b)=>b.minute-a.minute);
+ if(goalPlays.length)result.lastGoal=goalPlays[0];
  return result;
 }
 function attachLivePredictions(matches){
@@ -1079,6 +1099,12 @@ function liveCard(m,index,mode="all"){
   <div class="live-source">ESPN scoreboard${stats?" and match-summary feed":" feed"} · ${state.liveLastUpdated?"updated "+state.liveLastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"update time unavailable"}</div>
  </article>`;
 }
+function renderRecentGoals(matches){
+ const root=$("recentGoals");if(!root)return;
+ const rows=(matches||[]).map(m=>{const goal=state.liveStats[eventId(m)]?.lastGoal;if(!goal||goal.minute===null||!validScore(m))return null;const current=getElapsedLiveMinute(m);const age=Number.isFinite(goal.timestamp)?Math.max(0,(Date.now()-goal.timestamp)/60000):(current===null?null:Math.max(0,current-goal.minute));return{m,goal,age}}).filter(Boolean).sort((a,b)=>{const aa=a.age===null?999:a.age,bb=b.age===null?999:b.age;return aa-bb}).slice(0,10);
+ if(!rows.length){root.innerHTML=`<div class="recent-goals-panel"><div class="row between wrap"><strong>⚽ Latest goals</strong><span class="muted smalltext">Up to 10 live matches</span></div><p class="muted smalltext" style="margin:7px 0 0">Recent goal events aren’t available from the feed for the current live matches.</p></div>`;return;}
+ root.innerHTML=`<div class="recent-goals-panel"><div class="row between wrap" style="margin-bottom:5px"><strong>⚽ Latest goals</strong><span class="muted smalltext">Most recent first · max 10</span></div>${rows.map(({m,goal,age})=>{const cls=age!==null&&age<=1?'goal-now':age!==null&&age<=2?'goal-two':age!==null&&age<=5?'goal-five':'';const label=age===null?`${goal.minute}′`:age<=1?'JUST NOW':age<=2?'LAST 2 MIN':age<=5?'LAST 5 MIN':`${Math.round(age)} MIN AGO`;const side=goal.side==='home'?'home':goal.side==='away'?'away':null;const scorer=goal.scorer?` · ${esc(goal.scorer)}`:'';return`<div class="recent-goal-row ${cls}"><span class="goal-age">${label}</span><div><strong>${esc(m.home)} ${m.homeScore}–${m.awayScore} ${esc(m.away)}</strong><div class="muted smalltext">${esc(m.league||'Live')} · ${goal.minute}′${scorer}</div></div><span class="tag">${side==='home'?'HOME GOAL':side==='away'?'AWAY GOAL':'GOAL'}</span></div>`}).join('')}</div>`;
+}
 function renderLive(){
  const all=state.liveMatches.slice();
  $("liveTabCount").textContent=all.length?`(${all.length})`:"";
@@ -1087,17 +1113,13 @@ function renderLive(){
  const assess=m=>liveOpportunityAssessment(m,state.liveStats[eventId(m)]);
  const situationMatches=m=>{const a=assess(m);if(!a.hasScore)return state.liveSituationFilter==="all";if(state.liveSituationFilter==="drawing")return a.hs===a.as;if(state.liveSituationFilter==="losing")return a.hs!==a.as;return true};
  matches=matches.filter(situationMatches);
- const eligible=[];
- matches.forEach(m=>{const a=assess(m);if(a.hasScore)a.teams.filter(t=>t.score<=t.oppScore).forEach(t=>eligible.push({team:t,match:m,assessment:a}))});
- // Balanced ranking for the summary; only positive changes from pre-game are highlighted.
- const positive=eligible.filter(x=>x.team.delta>0).sort((x,y)=>y.team.opportunityScore-x.team.opportunityScore||y.team.delta-x.team.delta).slice(0,3);
  $("liveSummary").innerHTML=`<div class="stat"><span class="muted smalltext">Live matches shown</span><strong>${matches.length}</strong></div>`;
  renderLiveValidation();
+ renderRecentGoals(all.filter(m=>league==="all"||m.leagueId===league));
  const stormMatches=matches.map(m=>({m,signal:goalStormSignal(state.liveStats[eventId(m)])})).filter(x=>x.signal);
  const stormSummary=$("goalStormSummary");
  if(stormSummary)stormSummary.innerHTML=stormMatches.length?`<div class="goal-storm-panel"><div class="row between wrap"><h3 style="margin:0">⚡ Goal Storm Watch</h3><span class="tag">${stormMatches.length} high-activity ${stormMatches.length===1?"match":"matches"}</span></div><p class="muted smalltext" style="margin:5px 0 9px">Based on combined shots, shots on target and/or xG reported by the live feed. A storm signal means attacking activity is high; it does not predict a goal with certainty.</p>${stormMatches.slice(0,3).map(x=>`<div class="row between wrap" style="padding:7px 0;border-top:1px solid #9a612a"><strong>${esc(x.m.home)} ${validScore(x.m)?`${x.m.homeScore}–${x.m.awayScore}`:"vs"} ${esc(x.m.away)}</strong><span class="muted smalltext">${esc(x.signal.evidence.join(" · "))}</span></div>`).join("")}</div>`:"";
- if(!all.length){$("liveOpportunitySummary").innerHTML="";$("liveList").innerHTML=`<div class="empty">No live matches were returned by the feed right now. Refresh later to check again. The live feed may not cover every competition or update instantly.</div>`;return;}
- $("liveOpportunitySummary").innerHTML=positive.length?`<div class="panel" style="margin-bottom:14px"><div class="row between wrap"><h3 style="margin:0">Potential opportunities to investigate</h3><span class="tag">Balanced ranking</span></div><p class="muted smalltext" style="margin:6px 0 10px">Up to three drawing or losing teams with a positive change from pre-game, ranked by a balanced score using live win chance, pre-game movement, underdog status and available match stats. This is a model signal—not confirmed betting value or a live-odds comparison.</p><div class="live-opportunity-grid">${positive.map(x=>{const a=x.assessment,t=x.team;const why=t.delta>=10?`Win estimate up ${t.delta.toFixed(1)} points.`:t.pre<25?"Pre-game underdog with improved outlook.":a.available?"Balanced score includes available live stats.":"Live outlook improved from pre-game.";return`<div class="live-opportunity-metric signal"><strong>${esc(t.name)}</strong><span>${esc(x.match.home)} vs ${esc(x.match.away)} · ${esc(x.match.league||"League")}</span><div style="margin-top:7px;font-size:12px;color:var(--text)">Live win chance: ${t.live.toFixed(1)}%</div><div style="font-size:11px;color:var(--muted)">Pre-game: ${Math.round(t.pre)}% · Change: ${t.delta>=0?"+":""}${t.delta.toFixed(1)} pts</div><div style="font-size:11px;color:var(--muted)">${t.score}–${t.oppScore} · ${esc(x.match.statusName||"Live")}</div><div style="font-size:11px;margin-top:6px;color:var(--text)">${esc(why)}</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Opportunity score ${t.opportunityScore}/100 · not a probability</div></div>`}).join("")}</div></div>`:`<div class="panel" style="margin-bottom:14px"><h3 style="margin:0 0 5px">Potential opportunities to investigate</h3><p class="muted smalltext">No drawing or losing team currently has a positive change in estimated win chance from its pre-game prediction in the selected matches.</p></div>`;
+ if(!all.length){$("liveList").innerHTML=`<div class="empty">No live matches were returned by the feed right now. Refresh later to check again. The live feed may not cover every competition or update instantly.</div>`;return;}
  matches.sort((x,y)=>new Date(x.date)-new Date(y.date));
  if(!matches.length){$("liveList").innerHTML=`<div class="empty">No live matches match this filter right now.</div>`;return;}
  if(league==="all"){
