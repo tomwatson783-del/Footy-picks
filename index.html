@@ -439,14 +439,35 @@ async function fetchMonth(id,month){
 }
 function monthsBack(n){const out=[],now=new Date();for(let i=n-1;i>=0;i--){const d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-i,1));out.push(`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}`)}return out}
 async function fetchLeague(id,n=6,progress=()=>{}){
- const all=[];for(const [i,month] of monthsBack(n).entries()){progress(i,n,id);try{all.push(...await fetchMonth(id,month))}catch(e){console.warn(id,month,e.message)}}
- const unique=new Map();all.forEach(m=>unique.set(eventId(m),m));return[...unique.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
+ const months=monthsBack(n),all=[];let next=0,done=0;
+ async function getMonthWithRetry(month){
+  let lastError;
+  for(let attempt=0;attempt<2;attempt++){
+   try{return await fetchMonth(id,month)}
+   catch(e){
+    lastError=e;
+    if(attempt===0)await new Promise(resolve=>setTimeout(resolve,900));
+   }
+  }
+  throw lastError||new Error("ESPN request failed");
+ }
+ async function worker(){
+  while(next<months.length){
+   const month=months[next++];progress(done,months.length,id);
+   try{all.push(...await getMonthWithRetry(month))}
+   catch(e){console.warn("ESPN month request failed",id,month,e?.message||e)}
+   finally{done++;progress(done,months.length,id)}
+  }
+ }
+ // Limit per-league concurrency to reduce transient ESPN throttling/timeouts.
+ await Promise.all(Array.from({length:Math.min(2,months.length)},()=>worker()));
+ const unique=new Map();all.forEach(m=>unique.set(eventId(m),m));
+ return [...unique.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
 }
+
 async function fetchAllLeagues(n=6,progress=()=>{}){
  const all=[],errors=[],ids=Object.keys(LEAGUES);
  let nextIndex=0,completed=0;
- // Fetch a few competitions at once: faster than serial requests without
- // launching every league's full history simultaneously.
  async function worker(){
   while(nextIndex<ids.length){
    const index=nextIndex++,id=ids[index],name=LEAGUES[id];
@@ -457,14 +478,15 @@ async function fetchAllLeagues(n=6,progress=()=>{}){
     else errors.push(name);
    }catch(error){
     errors.push(name);
-    console.warn(`Could not load ${name}:`,error.message);
+    console.warn("Could not load "+name+":",error?.message||error);
    }finally{
     completed++;
     progress(completed,ids.length,name);
    }
   }
  }
- await Promise.all(Array.from({length:Math.min(3,ids.length)},()=>worker()));
+ // Two competitions at a time; each league now makes at most two requests at once.
+ await Promise.all(Array.from({length:Math.min(2,ids.length)},()=>worker()));
  const unique=new Map();
  for(const match of all)unique.set(eventId(match),match);
  return{
