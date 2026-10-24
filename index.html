@@ -283,7 +283,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
   <div><label for="sort">Sort by</label><select id="sort"><option value="date">Kick-off date</option><option value="confidence">Confidence</option></select></div>
  </div>
  <div class="row wrap" style="margin-bottom:12px"><button class="btn" id="load">Load / refresh predictions</button><button class="btn secondary" id="top10">Show Top 10 picks</button><button class="btn secondary" id="goalThreats">Show Goal Threats</button></div>
- <div class="notice">Predictions use earlier completed league results, opponent-adjusted form and a restrained home/away factor. Risk alerts flag recent league-result shocks and sharp form deterioration; historical shots and xG are not consistently available in the current feed. Expected goals are averages, not exact-score guarantees. The displayed score drives the predicted outcome under the 0.5 goal-gap rule. Confidence is an indicative rating, not a guarantee.</div>
+ <div class="notice">Predictions use earlier completed league results, opponent-adjusted form and a restrained home/away factor. Risk alerts are directional: only recent-form evidence that contradicts the predicted outcome lowers confidence; evidence that supports the pick can strengthen confidence. Historical shots and xG are not consistently available in the current feed. Expected goals are averages, not exact-score guarantees. The displayed score drives the predicted outcome under the 0.5 goal-gap rule. Confidence is an indicative rating, not a guarantee.</div>
  <div class="confidence-legend">
   <span class="tag confidence-high">🟢 Confidence 9–10</span><span class="tag confidence-medium">🟠 Confidence 7–8</span><span class="tag confidence-low">🔴 Confidence 0–6</span>
  </div>
@@ -330,7 +330,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 
 <section id="previous" hidden>
  <h2>Previous Predictions &amp; Results</h2><p class="muted">Saved predictions are compared with completed scores. Only predictions recorded before kick-off are assessed.</p>
- <button class="btn secondary" id="refreshHistory">Refresh scores &amp; results</button>
+ <div class="row wrap" style="margin-bottom:12px"><button class="btn secondary" id="refreshHistory">Refresh scores &amp; results</button><button class="btn danger" id="clearPredictionHistory">Reset saved prediction history</button></div><p class="muted smalltext">Reset clears saved pre-match predictions and their accuracy/risk summaries in this browser. It does not delete completed match data or the separate Live Centre tracking history.</p>
  <div class="controls">
   <div><label for="historyDays">Look back</label><select id="historyDays"><option value="7">Last 7 days</option><option value="14" selected>Last 14 days</option></select></div>
   <div><label for="historyLeague">Competition</label><select id="historyLeague" data-default="all"></select></div>
@@ -581,27 +581,55 @@ function venueFormAdjustment(history,venue){
   count:rows.length
  };
 }
-function teamRecentRisk(history,teamRatings){
- const rows=history||[],flags=[];let score=0;
- if(rows.length<3)return{score:0,level:"low",flags:[],sample:rows.length};
+function teamRecentEvidence(history,teamRatings){
+ const rows=history||[],weakness=[],strength=[];
+ if(rows.length<3)return{weaknessScore:0,strengthScore:0,weakness,strength,sample:rows.length};
  const last=rows[rows.length-1],opponent=teamRatings.get(last.opponentKey);
- if(last.result==="L"&&last.ga-last.gf>=2){score+=2;flags.push("Heavy defeat in the most recent league match");}
- if(last.result==="L"&&opponent&&Number(opponent.ppg)<1.15){score+=1;flags.push("Recent defeat against a lower-performing league opponent");}
- const last3=rows.slice(-3),losses3=last3.filter(x=>x.result==="L").length;
- if(losses3>=2){score+=1;flags.push("At least two defeats in the last three league matches");}
+ // Weakness and strength are recorded separately; they only become a risk/support
+ // after being compared with the outcome this fixture is predicting.
+ if(last.result==="L"&&last.ga-last.gf>=2)weakness.push("lost the latest league match by two or more goals");
+ if(last.result==="L"&&opponent&&Number(opponent.ppg)<1.15)weakness.push("lost the latest league match to a lower-performing opponent");
+ const last3=rows.slice(-3),wins3=last3.filter(x=>x.result==="W").length,losses3=last3.filter(x=>x.result==="L").length;
+ if(losses3>=2)weakness.push("lost at least two of the last three league matches");
+ if(wins3>=2&&losses3===0)strength.push("won at least two of the last three league matches without a defeat");
  const recent=rows.slice(-5),prior=rows.slice(-10,-5);
  if(prior.length>=3){
   const recentPpg=avg(recent,x=>x.points,0),priorPpg=avg(prior,x=>x.points,0);
-  if(priorPpg-recentPpg>=.75){score+=1;flags.push("Recent points rate has dropped sharply versus the preceding matches");}
+  if(priorPpg-recentPpg>=.75)weakness.push("points-per-game has dropped sharply versus the preceding matches");
+  if(recentPpg-priorPpg>=.75)strength.push("points-per-game has improved sharply versus the preceding matches");
+  const recentFor=avg(recent,x=>x.gf,0),priorFor=avg(prior,x=>x.gf,0);
+  if(priorFor-recentFor>=.6)weakness.push("goals scored per match have fallen sharply");
+  if(recentFor-priorFor>=.6)strength.push("goals scored per match have risen sharply");
   const recentConceded=avg(recent,x=>x.ga,0),priorConceded=avg(prior,x=>x.ga,0);
-  if(recentConceded-priorConceded>=.7){score+=1;flags.push("Goals conceded per match have risen sharply");}
+  if(recentConceded-priorConceded>=.7)weakness.push("goals conceded per match have risen sharply");
+  if(priorConceded-recentConceded>=.7)strength.push("goals conceded per match have fallen sharply");
  }
- return{score,level:score>=3?"high":score>=1?"medium":"low",flags,sample:rows.length};
+ if(last.result==="W"&&opponent&&Number(opponent.ppg)>=1.5)strength.push("beat a stronger-than-average league opponent in the latest match");
+ // Multiple descriptions of the same underlying trend are capped to avoid double-counting.
+ return{weaknessScore:Math.min(3,weakness.length),strengthScore:Math.min(3,strength.length),weakness,strength,sample:rows.length};
 }
-function matchRiskAssessment(homeHistory,awayHistory,teamRatings){
- const home=teamRecentRisk(homeHistory,teamRatings),away=teamRecentRisk(awayHistory,teamRatings),score=home.score+away.score;
- const level=Math.max(home.score,away.score)>=3||score>=4?"high":score>=1?"medium":"low";
- return{level,score,home,away,flags:[...home.flags.map(text=>({team:"home",name:"Home team",text})),...away.flags.map(text=>({team:"away",name:"Away team",text}))]};
+function matchRiskAssessment(homeHistory,awayHistory,teamRatings,prediction){
+ const home=teamRecentEvidence(homeHistory,teamRatings),away=teamRecentEvidence(awayHistory,teamRatings);
+ let riskScore=0,supportScore=0,flags=[],supportFlags=[];
+ const addRisk=(side,items)=>{if(!items.length)return;const team=side==="home"?"Home team":"Away team";riskScore+=Math.min(2,items.length);flags.push({team:side,name:team,text:items.slice(0,2).join("; ")});};
+ const addSupport=(side,items)=>{if(!items.length)return;const team=side==="home"?"Home team":"Away team";supportScore+=Math.min(2,items.length);supportFlags.push({team:side,name:team,text:items.slice(0,2).join("; ")});};
+ if(prediction==="H"){
+  addRisk("home",home.weakness);addRisk("away",away.strength);
+  addSupport("home",home.strength);addSupport("away",away.weakness);
+ }else if(prediction==="A"){
+  addRisk("away",away.weakness);addRisk("home",home.strength);
+  addSupport("away",away.strength);addSupport("home",home.weakness);
+ }else{
+  // For a draw pick, risk is a meaningful imbalance in recent direction; broadly
+  // similar weak form can support a draw rather than automatically count against it.
+  const homeMomentum=home.strengthScore-home.weaknessScore,awayMomentum=away.strengthScore-away.weaknessScore;
+  if(homeMomentum-awayMomentum>=2)addRisk("home",home.strength);
+  if(awayMomentum-homeMomentum>=2)addRisk("away",away.strength);
+  if(home.weaknessScore>=2&&away.weaknessScore>=2)supportFlags.push({team:"both",name:"Both teams",text:"both show multiple recent-form warning signs, which is consistent with a closely balanced draw forecast"}),supportScore++;
+  if(Math.abs(homeMomentum-awayMomentum)<2&&home.sample>=3&&away.sample>=3&&!(home.weaknessScore>=2&&away.weaknessScore>=2))supportFlags.push({team:"both",name:"Both teams",text:"recent-form signals are relatively balanced, consistent with the draw forecast"}),supportScore++;
+ }
+ const level=riskScore>=4?"high":riskScore>=2?"medium":"low";
+ return{level,score:riskScore,home,away,flags,supportScore:Math.min(2,supportScore),supportFlags};
 }
 function calculatePrediction(m,previous,model){
  const homeKey=teamKey(m,"H"),awayKey=teamKey(m,"A"),la=leagueAverages(previous);
@@ -629,19 +657,27 @@ function calculatePrediction(m,previous,model){
  // The expected-goal gap drives the outcome. A gap below 0.5 is a draw pick.
  const xgDifference=hl-al;
  const prediction=Math.abs(xgDifference)<.5?"D":xgDifference>0?"H":"A";
- const risk=matchRiskAssessment(rawHomeHist,rawAwayHist,teamRatings);
+ const risk=matchRiskAssessment(rawHomeHist,rawAwayHist,teamRatings,prediction);
  // Risk warnings reduce the apparent certainty instead of changing the score-led pick.
  const riskBlend=risk.level==="high"?.36:risk.level==="medium"?.18:0;
  const softened={H:dist.probs.H*(1-riskBlend)+riskBlend/3,D:dist.probs.D*(1-riskBlend)+riskBlend/3,A:dist.probs.A*(1-riskBlend)+riskBlend/3};
  const probs=alignOutcomeProbabilities(softened,prediction);
  const predictedScore=consistentPredictedScore(hl,al,prediction);
  const sorted=Object.values(probs).sort((x,y)=>y-x),coverage=clamp(Math.min(h.count,a.count)/10,0,1);
+ const probabilityGap=sorted[0]-sorted[1];
  const differenceStrength=clamp(Math.abs(xgDifference)/1.5,0,1);
- const rawConfidence=clamp(Math.round(3+(sorted[0]-sorted[1])*10+differenceStrength*2+coverage*2),1,9);
+ const supportBonus=Math.min(1,risk.supportScore*.5);
+ const rawConfidence=clamp(Math.round(3+probabilityGap*10+differenceStrength*2+coverage*2+supportBonus),1,9);
  const minTeamSample=Math.min(h.count,a.count),drawThresholdApplied=Math.abs(xgDifference)<.5;
  const confidenceLimit=drawThresholdApplied?6:9,riskPenalty=risk.level==="high"?2:risk.level==="medium"?1:0;
- const confidence=minTeamSample<5?Math.max(1,Math.min(rawConfidence-riskPenalty,6,confidenceLimit)):Math.max(1,Math.min(rawConfidence-riskPenalty,confidenceLimit));
- return{probs,prediction,confidence,confidenceSample:minTeamSample,h,a,homeLambda:hl,awayLambda:al,xgDifference,drawThresholdApplied,homeVenueMatches:homeVenue.count,awayVenueMatches:awayVenue.count,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore,leagueAverage:la.all,risk};
+ const sampleCap=minTeamSample<5?6:9;
+ const confidence=Math.max(1,Math.min(rawConfidence-riskPenalty,sampleCap,confidenceLimit));
+ const expectedGoalBreakdown={
+  home:{leagueBaseline:leagueHome,attackRatio:homeAttack,opponentDefenceRatio:awayDefence,homeAdvantage:1.04,venueAttack:homeVenue.attack,opponentVenueConceded:awayVenue.conceded,uncapped:leagueHome*homeAttack*awayDefence*1.04*homeVenue.attack*awayVenue.conceded,final:hl,venueMatches:homeVenue.count},
+  away:{leagueBaseline:leagueAway,attackRatio:awayAttack,opponentDefenceRatio:homeDefence,homeAdvantage:1,venueAttack:awayVenue.attack,opponentVenueConceded:homeDefVenue.conceded,uncapped:leagueAway*awayAttack*homeDefence*awayVenue.attack*homeDefVenue.conceded,final:al,venueMatches:awayVenue.count}
+ };
+ const confidenceBreakdown={topProbability:sorted[0],secondProbability:sorted[1],probabilityGap,goalGap:Math.abs(xgDifference),differenceStrength,coverage,supportBonus,rawConfidence,riskLevel:risk.level,riskPenalty,minTeamSample,sampleCap,drawThresholdApplied,confidenceLimit,final:confidence};
+ return{probs,prediction,confidence,confidenceSample:minTeamSample,h,a,homeLambda:hl,awayLambda:al,xgDifference,drawThresholdApplied,homeVenueMatches:homeVenue.count,awayVenueMatches:awayVenue.count,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore,leagueAverage:la.all,leagueHome,leagueAway,homeAttack,awayAttack,homeDefence,awayDefence,homeVenue,awayVenue,expectedGoalBreakdown,confidenceBreakdown,risk};
 }
 function updatePredictions(matches,index=state.activeIndex){
  const by={};for(const m of matches)(by[m.leagueId]??=[]).push(m);
@@ -708,11 +744,21 @@ function signalHtml(m){
  if(!signals.length)signals.push({icon:"⚖️",text:"Indicators are relatively close; review the outcome probabilities and expected goals."});
  return`<div class="signal-list">${signals.slice(0,5).map(s=>`<div class="signal"><span class="signal-icon">${s.icon}</span><span>${s.text}</span></div>`).join("")}</div>`;
 }
+function expectedGoalAuditHtml(m){
+ const fmt=n=>Number(n).toFixed(3),b=m.expectedGoalBreakdown||{};
+ const side=(name,x)=>`<div class="analytics-card"><h4>${name} expected goals</h4><div class="form-summary">League ${name.toLowerCase()==="home"?"home":"away"} baseline <strong>${fmt(x.leagueBaseline)}</strong></div><div class="form-summary">Team attack ratio <strong>× ${fmt(x.attackRatio)}</strong></div><div class="form-summary">Opponent defence ratio <strong>× ${fmt(x.opponentDefenceRatio)}</strong></div><div class="form-summary">Home advantage <strong>× ${fmt(x.homeAdvantage)}</strong></div><div class="form-summary">Venue attack adjustment <strong>× ${fmt(x.venueAttack)}</strong></div><div class="form-summary">Opponent venue-conceded adjustment <strong>× ${fmt(x.opponentVenueConceded)}</strong></div><div class="form-summary">Venue sample: <strong>${x.venueMatches} ${x.venueMatches===1?"match":"matches"}</strong></div><hr><div class="form-summary">Product before final clamp <strong>${fmt(x.uncapped)}</strong></div><div class="row between" style="margin-top:8px"><strong>Expected goals</strong><strong>${fmt(x.final)}</strong></div></div>`;
+ return `<div class="analytics-card full"><h4>Expected Goals — full calculation</h4><p class="analytics-note">The displayed values below are the actual factors used by the model. Ratios above 1 increase the estimate; ratios below 1 reduce it. Venue factors are capped between 0.82 and 1.18.</p><div class="analytics-grid">${side("Home",b.home)}${side("Away",b.away)}</div><p class="analytics-note">Attack and defence ratios are the opponent-adjusted blended 15/10/5-match metrics divided by the league-wide average. The final estimate is clamped to 0.15–4.20 goals.</p></div>`;
+}
+function confidenceAuditHtml(m){
+ const c=m.confidenceBreakdown||{};
+ return `<div class="analytics-card full"><h4>Confidence — calculation</h4><p class="analytics-note">Confidence is a heuristic rating, not a calibrated probability of being correct.</p><div class="form-summary">Top outcome probability: <strong>${(c.topProbability*100).toFixed(1)}%</strong></div><div class="form-summary">Second-highest outcome probability: <strong>${(c.secondProbability*100).toFixed(1)}%</strong></div><div class="form-summary">Probability gap contribution: <strong>${(c.probabilityGap*100).toFixed(1)} percentage points</strong> (gap × 10 in the raw score)</div><div class="form-summary">Expected-goal gap: <strong>${Number(c.goalGap).toFixed(2)}</strong> · gap strength <strong>${Number(c.differenceStrength).toFixed(2)}</strong> (up to +2 points)</div><div class="form-summary">History coverage: <strong>${Math.round(c.coverage*100)}%</strong> (up to +2 points; based on the smaller team sample, capped at 10 matches)</div><div class="form-summary">Raw confidence: <strong>${c.rawConfidence}/9</strong> (starts at 3)</div><div class="form-summary">Supporting-evidence bonus: <strong>+${Number(c.supportBonus||0).toFixed(1)}</strong> (capped at +1 raw point)<br>Contradictory-form risk adjustment: <strong>−${c.riskPenalty}</strong> (${esc(c.riskLevel)} risk)</div><div class="form-summary">Smallest team history: <strong>${c.minTeamSample} matches</strong> · sample cap <strong>${c.sampleCap}/10</strong></div><div class="form-summary">Draw-pick cap applied: <strong>${c.drawThresholdApplied?"Yes (maximum 6/10)":"No"}</strong></div><div class="row between" style="margin-top:10px"><strong>Final confidence</strong><strong>${c.final}/10</strong></div></div>`;
+}
 function insidePredictionHtml(m){
  return`<div class="inside-prediction"><h3 class="inside-title">Inside the Prediction</h3><p class="inside-subtitle">A visual breakdown of the indicators behind this fixture's forecast.</p><div class="analytics-grid">
  <div class="analytics-card full"><h4>Team strength radar</h4>${radarHtml(m)}</div>
  <div class="analytics-card"><h4>Recent form &amp; momentum</h4>${formTracker(m.home,m.h)}${formTracker(m.away,m.a)}</div>
  <div class="analytics-card"><h4>Goals comparison</h4>${metricComparison("Expected goals",m.homeLambda,m.awayLambda)}${metricComparison("Modelled goals scored",m.h.attack,m.a.attack)}${metricComparison("Modelled goals conceded",m.h.defence,m.a.defence)}<p class="analytics-note">Expected goals are projected scoring averages, not guarantees.</p></div>
+ ${expectedGoalAuditHtml(m)}${confidenceAuditHtml(m)}
  <div class="analytics-card full"><h4>Key supporting signals &amp; risks</h4>${signalHtml(m)}</div></div></div>`;
 }
 function explainHtml(m){
@@ -726,13 +772,13 @@ function explainHtml(m){
  </ul><strong>${esc(m.home)} form</strong>${formHtml(m.h)}<strong>${esc(m.away)} form</strong>${formHtml(m.a)}</div></details>`;
 }
 function riskBadgeHtml(risk){
- if(!risk||risk.level==="low")return `<span class="tag good">No strong recent-result alert</span>`;
+ if(!risk||risk.level==="low")return risk?.supportFlags?.length?`<span class="tag good">Prediction supported</span>`:`<span class="tag good">No contradictory form alert</span>`;
  return `<span class="tag ${risk.level==="high"?"bad":"warn"}">${risk.level==="high"?"HIGH RISK":"FORM WARNING"}</span>`;
 }
 function riskDetailsHtml(m){
  const risk=m.risk;
- if(!risk||risk.level==="low")return `<div class="notice">No strong recent-results warning was detected from the available league score history. This does not rule out injuries, tactical changes or other information absent from the feed.</div>`;
- const lines=risk.flags.map(f=>`<li><strong>${f.name}:</strong> ${f.text}.</li>`).join("");
+ if(!risk||risk.level==="low"){const support=(risk?.supportFlags||[]).map(f=>`<li><strong>${esc(f.name)}:</strong> ${esc(f.text)}.</li>`).join("");return `<div class="notice">${support?`<strong>Evidence supporting the prediction</strong><ul style="margin:6px 0 0;padding-left:19px">${support}</ul>`:"No strong recent-form evidence contradicts this prediction."}<p class="analytics-note">Only signals that conflict with the predicted outcome are treated as risks and reduce confidence. The available history is based on league scores; historical shots and xG are not consistently available in this feed.</p></div>`;}
+ const lines=risk.flags.map(f=>`<li><strong>${esc(f.name)}:</strong> ${esc(f.text)}.</li>`).join("");
  return `<div class="notice" style="border-left-color:${risk.level==="high"?"var(--red)":"var(--amber)"}"><strong>${risk.level==="high"?"HIGH RISK — confidence reduced":"FORM WARNING — confidence reduced"}</strong><ul style="margin:6px 0 0;padding-left:19px">${lines}</ul><p class="analytics-note">This alert uses recent league results and score patterns. Historical shots, shots on target and xG are not available consistently in the current scoreboard history, so this is a result-based warning rather than a full performance-shock test.</p></div>`;
 }
 function renderRiskSummary(list){
@@ -1377,6 +1423,7 @@ $("top10").addEventListener("click",()=>{state.topMode=!state.topMode;$("top10")
 $("goalThreats").addEventListener("click",()=>{state.goalThreatMode=!state.goalThreatMode;$("goalThreats").textContent=state.goalThreatMode?"Hide Goal Threats":"Show Goal Threats";if(state.goalThreatMode)renderGoalThreats();else $("goalThreatBox").innerHTML=""});
 $("clearAcc").addEventListener("click",()=>{if(confirm("Clear all accumulator selections?")){state.acc=[];store("fp_acc",state.acc);renderAccumulator();renderFixtures()}});
 $("historyDays").addEventListener("change",renderHistory);$("historyLeague").addEventListener("change",renderHistory);$("refreshHistory").addEventListener("click",()=>{if(!state.loading)loadData()});
+$("clearPredictionHistory").addEventListener("click",()=>{if(confirm("Reset all saved pre-match predictions and their accuracy history on this browser? This cannot be undone. Completed match data and Live Centre tracking will remain.")){state.history=[];try{localStorage.removeItem("fp_prediction_history")}catch{}renderHistory();}});
 $("saveSettings").addEventListener("click",saveSettings);$("runTest").addEventListener("click",doTest);
 $("liveRefresh").addEventListener("click",fetchLive);
 document.querySelectorAll("#liveFilters button").forEach(b=>b.addEventListener("click",()=>{state.liveSituationFilter=b.dataset.situation;document.querySelectorAll("#liveFilters button").forEach(x=>x.classList.toggle("active",x===b));renderLive()}));
