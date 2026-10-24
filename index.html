@@ -279,15 +279,15 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
  </div>
  <div class="controls">
   <div><label for="league">Competition</label><select id="league" data-default="eng.2"></select></div>
-  <div><label for="days">Fixture window</label><select id="days"><option value="today">Today</option><option value="3">Next 3 days</option><option value="7">Next 7 days</option><option value="14" selected>Next 14 days</option><option value="30">Next 30 days</select></div>
+  <div><label for="days">Fixture window</label><select id="days"><option value="today">Today</option><option value="tomorrow">Tomorrow</option><option value="3">Next 3 days</option><option value="7">Next 7 days</option><option value="14" selected>Next 14 days</option><option value="30">Next 30 days</option></select></div>
   <div><label for="sort">Sort by</label><select id="sort"><option value="date">Kick-off date</option><option value="confidence">Confidence</option></select></div>
  </div>
  <div class="row wrap" style="margin-bottom:12px"><button class="btn" id="load">Load / refresh predictions</button><button class="btn secondary" id="top10">Show Top 10 picks</button><button class="btn secondary" id="goalThreats">Show Goal Threats</button></div>
- <div class="notice">Predictions use earlier completed league results. Expected goals are averages, not exact-score guarantees. Displayed scores are rounded estimates adjusted to agree with the predicted result. Confidence is an indicative model rating, not a guarantee. Ratings are capped at 6/10 unless both teams have at least 5 prior completed matches. Probabilities are estimates, not betting advice.</div>
+ <div class="notice">Predictions use earlier completed league results, opponent-adjusted form and a restrained home/away factor. Risk alerts flag recent league-result shocks and sharp form deterioration; historical shots and xG are not consistently available in the current feed. Expected goals are averages, not exact-score guarantees. The displayed score drives the predicted outcome under the 0.5 goal-gap rule. Confidence is an indicative rating, not a guarantee.</div>
  <div class="confidence-legend">
   <span class="tag confidence-high">🟢 Confidence 9–10</span><span class="tag confidence-medium">🟠 Confidence 7–8</span><span class="tag confidence-low">🔴 Confidence 0–6</span>
  </div>
- <div id="topbox"></div><div id="goalThreatBox"></div><div id="fixtureStatus" class="muted smalltext"></div><div id="fixtureList"><div class="empty">Tap “Load / refresh predictions” to begin.</div></div>
+ <div id="topbox"></div><div id="goalThreatBox"></div><div id="fixtureStatus" class="muted smalltext"></div><div id="riskSummary"></div><div id="fixtureList"><div class="empty">Tap “Load / refresh predictions” to begin.</div></div>
 </section>
 
 <section id="live" hidden>
@@ -335,7 +335,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
   <div><label for="historyDays">Look back</label><select id="historyDays"><option value="7">Last 7 days</option><option value="14" selected>Last 14 days</option></select></div>
   <div><label for="historyLeague">Competition</label><select id="historyLeague" data-default="all"></select></div>
  </div>
- <div id="historyStats"></div><div id="confidencePerformance"></div><div id="historyList"></div>
+ <div id="historyStats"></div><div id="confidencePerformance"></div><div id="riskPerformance"></div><div id="historyList"></div>
  <p class="muted smalltext">Snapshots are stored only in this browser. Clearing site data may remove them.</p>
 </section>
 
@@ -581,6 +581,28 @@ function venueFormAdjustment(history,venue){
   count:rows.length
  };
 }
+function teamRecentRisk(history,teamRatings){
+ const rows=history||[],flags=[];let score=0;
+ if(rows.length<3)return{score:0,level:"low",flags:[],sample:rows.length};
+ const last=rows[rows.length-1],opponent=teamRatings.get(last.opponentKey);
+ if(last.result==="L"&&last.ga-last.gf>=2){score+=2;flags.push("Heavy defeat in the most recent league match");}
+ if(last.result==="L"&&opponent&&Number(opponent.ppg)<1.15){score+=1;flags.push("Recent defeat against a lower-performing league opponent");}
+ const last3=rows.slice(-3),losses3=last3.filter(x=>x.result==="L").length;
+ if(losses3>=2){score+=1;flags.push("At least two defeats in the last three league matches");}
+ const recent=rows.slice(-5),prior=rows.slice(-10,-5);
+ if(prior.length>=3){
+  const recentPpg=avg(recent,x=>x.points,0),priorPpg=avg(prior,x=>x.points,0);
+  if(priorPpg-recentPpg>=.75){score+=1;flags.push("Recent points rate has dropped sharply versus the preceding matches");}
+  const recentConceded=avg(recent,x=>x.ga,0),priorConceded=avg(prior,x=>x.ga,0);
+  if(recentConceded-priorConceded>=.7){score+=1;flags.push("Goals conceded per match have risen sharply");}
+ }
+ return{score,level:score>=3?"high":score>=1?"medium":"low",flags,sample:rows.length};
+}
+function matchRiskAssessment(homeHistory,awayHistory,teamRatings){
+ const home=teamRecentRisk(homeHistory,teamRatings),away=teamRecentRisk(awayHistory,teamRatings),score=home.score+away.score;
+ const level=Math.max(home.score,away.score)>=3||score>=4?"high":score>=1?"medium":"low";
+ return{level,score,home,away,flags:[...home.flags.map(text=>({team:"home",name:"Home team",text})),...away.flags.map(text=>({team:"away",name:"Away team",text}))]};
+}
 function calculatePrediction(m,previous,model){
  const homeKey=teamKey(m,"H"),awayKey=teamKey(m,"A"),la=leagueAverages(previous);
  const rawHomeHist=historyForTeam(previous,homeKey),rawAwayHist=historyForTeam(previous,awayKey);
@@ -607,15 +629,19 @@ function calculatePrediction(m,previous,model){
  // The expected-goal gap drives the outcome. A gap below 0.5 is a draw pick.
  const xgDifference=hl-al;
  const prediction=Math.abs(xgDifference)<.5?"D":xgDifference>0?"H":"A";
- const probs=alignOutcomeProbabilities(dist.probs,prediction);
+ const risk=matchRiskAssessment(rawHomeHist,rawAwayHist,teamRatings);
+ // Risk warnings reduce the apparent certainty instead of changing the score-led pick.
+ const riskBlend=risk.level==="high"?.36:risk.level==="medium"?.18:0;
+ const softened={H:dist.probs.H*(1-riskBlend)+riskBlend/3,D:dist.probs.D*(1-riskBlend)+riskBlend/3,A:dist.probs.A*(1-riskBlend)+riskBlend/3};
+ const probs=alignOutcomeProbabilities(softened,prediction);
  const predictedScore=consistentPredictedScore(hl,al,prediction);
  const sorted=Object.values(probs).sort((x,y)=>y-x),coverage=clamp(Math.min(h.count,a.count)/10,0,1);
  const differenceStrength=clamp(Math.abs(xgDifference)/1.5,0,1);
  const rawConfidence=clamp(Math.round(3+(sorted[0]-sorted[1])*10+differenceStrength*2+coverage*2),1,9);
  const minTeamSample=Math.min(h.count,a.count),drawThresholdApplied=Math.abs(xgDifference)<.5;
- const confidenceLimit=drawThresholdApplied?6:9;
- const confidence=minTeamSample<5?Math.min(rawConfidence,6,confidenceLimit):Math.min(rawConfidence,confidenceLimit);
- return{probs,prediction,confidence,confidenceSample:minTeamSample,h,a,homeLambda:hl,awayLambda:al,xgDifference,drawThresholdApplied,homeVenueMatches:homeVenue.count,awayVenueMatches:awayVenue.count,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore,leagueAverage:la.all};
+ const confidenceLimit=drawThresholdApplied?6:9,riskPenalty=risk.level==="high"?2:risk.level==="medium"?1:0;
+ const confidence=minTeamSample<5?Math.max(1,Math.min(rawConfidence-riskPenalty,6,confidenceLimit)):Math.max(1,Math.min(rawConfidence-riskPenalty,confidenceLimit));
+ return{probs,prediction,confidence,confidenceSample:minTeamSample,h,a,homeLambda:hl,awayLambda:al,xgDifference,drawThresholdApplied,homeVenueMatches:homeVenue.count,awayVenueMatches:awayVenue.count,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore,leagueAverage:la.all,risk};
 }
 function updatePredictions(matches,index=state.activeIndex){
  const by={};for(const m of matches)(by[m.leagueId]??=[]).push(m);
@@ -699,29 +725,50 @@ function explainHtml(m){
  <li><strong>Recent form:</strong> ${esc(m.home)} — ${fmt(m.h)}; ${esc(m.away)} — ${fmt(m.a)}.</li>
  </ul><strong>${esc(m.home)} form</strong>${formHtml(m.h)}<strong>${esc(m.away)} form</strong>${formHtml(m.a)}</div></details>`;
 }
+function riskBadgeHtml(risk){
+ if(!risk||risk.level==="low")return `<span class="tag good">No strong recent-result alert</span>`;
+ return `<span class="tag ${risk.level==="high"?"bad":"warn"}">${risk.level==="high"?"HIGH RISK":"FORM WARNING"}</span>`;
+}
+function riskDetailsHtml(m){
+ const risk=m.risk;
+ if(!risk||risk.level==="low")return `<div class="notice">No strong recent-results warning was detected from the available league score history. This does not rule out injuries, tactical changes or other information absent from the feed.</div>`;
+ const lines=risk.flags.map(f=>`<li><strong>${f.name}:</strong> ${f.text}.</li>`).join("");
+ return `<div class="notice" style="border-left-color:${risk.level==="high"?"var(--red)":"var(--amber)"}"><strong>${risk.level==="high"?"HIGH RISK — confidence reduced":"FORM WARNING — confidence reduced"}</strong><ul style="margin:6px 0 0;padding-left:19px">${lines}</ul><p class="analytics-note">This alert uses recent league results and score patterns. Historical shots, shots on target and xG are not available consistently in the current scoreboard history, so this is a result-based warning rather than a full performance-shock test.</p></div>`;
+}
+function renderRiskSummary(list){
+ const root=$("riskSummary");if(!root)return;
+ const flagged=list.filter(m=>m.risk&&m.risk.level!=="low").sort((a,b)=>(b.risk.level==="high")-(a.risk.level==="high")||b.risk.score-a.risk.score).slice(0,5);
+ if(!flagged.length){root.innerHTML="";return;}
+ root.innerHTML=`<div class="panel"><div class="row between wrap"><h3 style="margin:0">⚠️ Risk &amp; Form Alerts</h3><span class="tag">${list.filter(m=>m.risk?.level==="high").length} high risk · ${list.filter(m=>m.risk?.level==="medium").length} warnings</span></div><p class="muted smalltext" style="margin:6px 0 10px">Matches where recent league results suggest the model may not have fully caught up with a form change.</p>${flagged.map(m=>`<div class="row between wrap" style="padding:8px 0;border-top:1px solid var(--border);gap:8px"><div class="grow"><strong>${esc(m.home)} vs ${esc(m.away)}</strong><div class="muted smalltext">${esc(m.league)} · ${esc(fmtDate(m.date))} · ${m.risk.flags.length?esc(m.risk.flags[0].text):"Recent form warning"}</div></div>${riskBadgeHtml(m.risk)}<span class="tag">${m.confidence}/10</span></div>`).join("")}</div>`;
+}
 function matchCard(m){
  const id=eventId(m),added=state.acc.some(x=>x.id===id),shownScore=isFinished(m)?resultString(m):m.predictedScore;
- return`<article class="match"><div class="row between"><span class="league">${esc(m.league)}</span><div class="row wrap">${confidenceBadge(m.confidence)}${Math.min(m.h?.count??0,m.a?.count??0)<5?`<span class="tag confidence-low" title="At least one team has fewer than five prior completed matches">Limited sample</span>`:""}</div></div>
+ return`<article class="match"><div class="row between"><span class="league">${esc(m.league)}</span><div class="row wrap">${confidenceBadge(m.confidence)}${riskBadgeHtml(m.risk)}${Math.min(m.h?.count??0,m.a?.count??0)<5?`<span class="tag confidence-low" title="At least one team has fewer than five prior completed matches">Limited sample</span>`:""}</div></div>
  <div class="meta" style="margin:7px 0">${esc(fmtDate(m.date))}${m.venue?" · "+esc(m.venue):""}</div>
  <div class="row between"><div class="grow teamline">${esc(m.home)}<div class="meta">${m.h.count} prior league matches</div></div><strong style="white-space:nowrap;font-size:19px">${shownScore}</strong><div class="grow teamline" style="text-align:right">${esc(m.away)}<div class="meta">${m.a.count} prior league matches</div></div></div>
- ${probsHtml(m)}<div class="row between wrap"><span class="tag">Pick: ${outcomeName(m.prediction)}</span><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(id)}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>${explainHtml(m)}</article>`;
+ ${probsHtml(m)}<div class="row between wrap"><span class="tag">Pick: ${outcomeName(m.prediction)}</span><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(id)}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>${riskDetailsHtml(m)}${explainHtml(m)}</article>`;
 }
 function upcoming(){
- const now=new Date(),v=$("days").value,league=$("league").value,end=v==="today"?new Date(now.getFullYear(),now.getMonth(),now.getDate(),23,59,59,999).getTime():now.getTime()+(Number(v)||14)*86400000;
- let list=state.matches.filter(m=>!isFinished(m)&&new Date(m.date).getTime()>=now.getTime()-2*3600000&&new Date(m.date).getTime()<=end);
+ const now=new Date(),v=$("days").value,league=$("league").value,todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+ let start=now.getTime()-2*3600000,end;
+ if(v==="today"){end=todayStart+86400000-1;}
+ else if(v==="tomorrow"){start=todayStart+86400000;end=start+86400000-1;}
+ else{end=now.getTime()+(Number(v)||14)*86400000;}
+ let list=state.matches.filter(m=>!isFinished(m)&&new Date(m.date).getTime()>=start&&new Date(m.date).getTime()<=end);
  if(league!=="all")list=list.filter(m=>m.leagueId===league);
  return list.sort($("sort").value==="confidence"?(a,b)=>b.confidence-a.confidence:(a,b)=>new Date(a.date)-new Date(b.date));
 }
 function renderFixtures(){
  const list=upcoming();
  $("fixtureStatus").textContent=state.loaded?`${list.length} upcoming fixtures · ${state.matches.filter(isFinished).length} completed results loaded`:"";
+ renderRiskSummary(list);
  $("fixtureList").innerHTML=list.length?list.map(matchCard).join(""):`<div class="empty">${state.loaded?"No upcoming fixtures found. Try another league or longer window.":"Load fixtures to see predictions."}</div>`;
  if(state.topMode)renderTop10();
  if(state.goalThreatMode)renderGoalThreats();
 }
 function renderTop10(){
  const all=upcoming().sort((a,b)=>b.probs[b.prediction]-a.probs[a.prediction]).slice(0,10);
- $("topbox").innerHTML=`<h2>Top 10 picks</h2><p class="muted smalltext">Ranked by the probability of the model's leading outcome. Higher probability does not mean a guaranteed result.</p><div class="confidence-legend"><span class="tag confidence-high">🟢 9–10</span><span class="tag confidence-medium">🟠 7–8</span><span class="tag confidence-low">🔴 0–6</span></div>`+all.map((m,i)=>{const added=state.acc.some(x=>x.id===eventId(m));return`<div class="pick"><div class="top-pick-header"><strong class="top-pick-teams">${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong><div class="top-pick-confidence">${confidenceBadge(m.confidence)}</div></div><div class="meta" style="margin-top:6px">${esc(m.league)} · ${esc(fmtDate(m.date))}</div><div class="row wrap" style="margin:10px 0"><span class="tag">Pick: ${outcomeName(m.prediction)}</span><span class="tag">${Math.round(m.probs[m.prediction]*100)}% probability</span></div><div class="meta" style="margin-bottom:9px">Predicted score: ${esc(m.predictedScore)}</div><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(eventId(m))}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>`}).join("")||`<div class="empty">No upcoming matches found.</div>`;
+ $("topbox").innerHTML=`<h2>Top 10 picks</h2><p class="muted smalltext">Ranked by the probability of the model's leading outcome. Higher probability does not mean a guaranteed result.</p><div class="confidence-legend"><span class="tag confidence-high">🟢 9–10</span><span class="tag confidence-medium">🟠 7–8</span><span class="tag confidence-low">🔴 0–6</span></div>`+all.map((m,i)=>{const added=state.acc.some(x=>x.id===eventId(m));return`<div class="pick"><div class="top-pick-header"><strong class="top-pick-teams">${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong><div class="top-pick-confidence">${confidenceBadge(m.confidence)}</div></div><div class="meta" style="margin-top:6px">${esc(m.league)} · ${esc(fmtDate(m.date))}</div><div class="row wrap" style="margin:10px 0"><span class="tag">Pick: ${outcomeName(m.prediction)}</span><span class="tag">${Math.round(m.probs[m.prediction]*100)}% probability</span>${riskBadgeHtml(m.risk)}</div><div class="meta" style="margin-bottom:9px">Predicted score: ${esc(m.predictedScore)}${m.risk?.flags?.length?` · Risk: ${esc(m.risk.flags[0].text)}`:""}</div><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(eventId(m))}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>`}).join("")||`<div class="empty">No upcoming matches found.</div>`;
 }
 function goalCountProbability(lambda, minimumGoals){
  let below=0;
@@ -755,7 +802,7 @@ function removeAcc(i){state.acc.splice(i,1);store("fp_acc",state.acc);renderAccu
 function snapshotPredictions(matches){
  const now=Date.now();let added=0;
  for(const m of matches){if(new Date(m.date).getTime()<now-2*3600000||!m.probs)continue;const id=eventId(m),existing=state.history.find(x=>x.id===id);if(existing){if(!Number.isFinite(Number(existing.confidence))){existing.confidence=m.confidence;store("fp_prediction_history",state.history)}continue}
- state.history.push({id,leagueId:m.leagueId,league:m.league,home:m.home,away:m.away,date:m.date,prediction:m.prediction,confidence:m.confidence,probs:{...m.probs},predictedScore:m.predictedScore,modelIndex:state.activeIndex,savedAt:new Date().toISOString()});added++}
+ state.history.push({id,leagueId:m.leagueId,league:m.league,home:m.home,away:m.away,date:m.date,prediction:m.prediction,confidence:m.confidence,probs:{...m.probs},predictedScore:m.predictedScore,riskLevel:m.risk?.level||"low",riskFlags:(m.risk?.flags||[]).map(f=>f.text),modelIndex:state.activeIndex,savedAt:new Date().toISOString()});added++}
  state.history=state.history.filter(x=>Date.now()-new Date(x.date).getTime()<45*86400000).slice(-1500);store("fp_prediction_history",state.history);return added;
 }
 function renderConfidencePerformance(settled){
@@ -768,12 +815,20 @@ function renderConfidencePerformance(settled){
  const sampled=rows.some(r=>r.total>0);
  root.innerHTML=`<div class="panel confidence-performance"><div class="row between wrap"><div><h3 style="margin:0">Confidence Performance</h3><p class="muted smalltext" style="margin:5px 0 0">Hit rate by saved confidence rating, using completed predictions in the selected period and competition.</p></div><span class="tag">${settled.length} settled</span></div>${sampled?`<div style="margin-top:12px">${rows.filter(r=>r.total).map(r=>`<div class="confidence-bar-row"><strong>${r.score}/10</strong><div class="confidence-bar-track" role="img" aria-label="Confidence ${r.score}: ${r.rate.toFixed(1)} percent hit rate"><span style="width:${clamp(r.rate,0,100)}%"></span></div><span class="rate">${r.rate.toFixed(1)}%</span><span class="sample">${r.hits}/${r.total} hit</span></div>`).join("")}</div><div class="tablewrap" style="margin-top:12px"><table><thead><tr><th>Confidence</th><th>Correct</th><th>Checked</th><th>Hit rate</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.score}/10</td><td>${r.hits}</td><td>${r.total}</td><td>${r.total?r.rate.toFixed(1)+"%":"—"}</td></tr>`).join("")}</tbody></table></div>`:`<div class="empty">No settled predictions with confidence ratings in this selection yet. Load fixtures regularly and refresh results to build a meaningful sample.</div>`}<p class="analytics-note">Each percentage is correct picks ÷ settled picks at that confidence rating. Always check the sample size: a high hit rate from only a few games can be misleading. Confidence is the model’s rating, not a calibrated probability.</p></div>`;
 }
+function renderRiskPerformance(settled){
+ const root=$("riskPerformance");if(!root)return;
+ const tiers=[{key:"high",label:"High risk"},{key:"medium",label:"Form warning"},{key:"low",label:"No strong alert"}];
+ const rows=tiers.map(t=>{const group=settled.filter(x=>x.riskLevel===t.key),hits=group.filter(x=>x.actualOutcome===x.prediction).length;return{...t,total:group.length,hits,rate:group.length?hits/group.length*100:null};});
+ const has=rows.some(r=>r.total>0);
+ root.innerHTML=`<div class="panel"><h3>Risk Alert Performance</h3><p class="muted smalltext">Tracks whether risk labels help identify predictions that are less reliable. New predictions must have been saved with a risk label; older snapshots may not be included.</p>${has?`<div class="tablewrap"><table><thead><tr><th>Risk label</th><th>Correct picks</th><th>Settled</th><th>Hit rate</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.label}</td><td>${r.hits}</td><td>${r.total}</td><td>${r.total?r.rate.toFixed(1)+"%":"—"}</td></tr>`).join("")}</tbody></table></div><p class="analytics-note">Treat this as exploratory until each group has a meaningful number of settled matches. A high-risk label is useful only if it is associated with measurably lower accuracy over time.</p>`:`<div class="empty">No settled predictions with saved risk labels yet. Load fixtures before kick-off and refresh results after matches finish to build this comparison.</div>`}</div>`;
+}
 function renderHistory(){
  const days=+$('historyDays').value,league=$('historyLeague').value,cut=Date.now()-days*86400000;
  const list=state.history.filter(x=>new Date(x.date).getTime()>=cut&&new Date(x.date).getTime()<=Date.now()&&(league==="all"||x.leagueId===league)).sort((a,b)=>new Date(b.date)-new Date(a.date));
  const settled=list.filter(x=>x.actualOutcome),correct=settled.filter(x=>x.actualOutcome===x.prediction).length;
  $('historyStats').innerHTML=`<div class="statgrid"><div class="stat"><span class="muted smalltext">Saved predictions</span><strong>${list.length}</strong></div><div class="stat"><span class="muted smalltext">Completed and checked</span><strong>${settled.length}</strong></div><div class="stat"><span class="muted smalltext">Correct top picks</span><strong>${correct}</strong></div><div class="stat"><span class="muted smalltext">Hit rate</span><strong>${settled.length?(correct/settled.length*100).toFixed(1)+"%":"—"}</strong></div></div>`;
  renderConfidencePerformance(settled);
+ renderRiskPerformance(settled);
  if(!list.length){$('historyList').innerHTML=`<div class="empty">No saved predictions in this period yet. Load fixtures regularly to build your history.</div>`;return}
  $('historyList').innerHTML=list.map(x=>{const done=!!x.actualOutcome,ok=done&&x.actualOutcome===x.prediction,score=x.actualScore||"Result pending",prob=k=>Math.round((x.probs[k]||0)*100),reason=!done?"Waiting for the final result.":ok?"The model's most likely outcome happened.":`The model favoured ${outcomeName(x.prediction)} (${prob(x.prediction)}%), but ${outcomeName(x.actualOutcome).toLowerCase()} happened.`;return`<article class="match"><div class="row between wrap"><span class="league">${esc(x.league)}</span><div class="row wrap">${confidenceBadge(x.confidence)}<span class="tag ${!done?"":ok?"good":"bad"}">${!done?"Pending":ok?"Correct":"Incorrect"}</span></div></div><div class="meta">${esc(fmtDate(x.date))} · Model ${MODELS[x.modelIndex]?.short||"?"}</div><div class="row between" style="margin-top:7px"><strong class="grow">${esc(x.home)}</strong><strong>${esc(score)}</strong><strong class="grow" style="text-align:right">${esc(x.away)}</strong></div>${x.predictedScore?`<div class="meta" style="margin-top:5px">Saved predicted score: ${esc(x.predictedScore)}</div>`:""}<div class="probrow">${[["H","Home"],["D","Draw"],["A","Away"]].map(([k,n])=>`<div class="prob"><span>${n}</span><strong>${prob(k)}%</strong></div>`).join("")}</div><div class="notice"><strong>${done?(ok?"Why it was correct":"Why it was wrong"):"What the model expected"}</strong><br>${esc(reason)}</div></article>`}).join("");
 }
@@ -933,6 +988,8 @@ function attachLivePredictions(matches){
     match.prediction=loaded.prediction||["H","D","A"].sort((a,b)=>match.probs[b]-match.probs[a])[0];
     match.predictedScore=loaded.predictedScore;
     match.confidence=loaded.confidence;
+    const loadedForecast=loaded&&Number.isFinite(loaded.homeLambda)&&Number.isFinite(loaded.awayLambda)?loaded:null;
+    if(loadedForecast){match.preGameHomeLambda=loadedForecast.homeLambda;match.preGameAwayLambda=loadedForecast.awayLambda;match.risk=loadedForecast.risk;}
     continue;
    }
   }
@@ -945,6 +1002,9 @@ function attachLivePredictions(matches){
   match.prediction=forecast.prediction;
   match.predictedScore=forecast.predictedScore;
   match.confidence=forecast.confidence;
+  match.preGameHomeLambda=forecast.homeLambda;
+  match.preGameAwayLambda=forecast.awayLambda;
+  match.risk=forecast.risk;
  }
 }
 
@@ -1029,7 +1089,7 @@ function poissonProbabilities(lambda,maxGoals=8){
  const total=out.reduce((a,b)=>a+b,0)||1;
  return out.map(v=>v/total);
 }
-function scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redDiff,redCardsKnown,m){
+function scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redDiff,redCardsKnown,m,stats){
  // Model only the goals realistically left to score. If the feed explicitly reports added time (e.g. 90'+7), assume roughly one further minute after that displayed minute; otherwise use a six-minute default, with very little time left once the clock has passed 96.
  const status=String(m?.statusName||"");
  const added=status.match(/(\d{1,3})\s*['′’]?\s*\+\s*(\d{1,2})/);
@@ -1038,8 +1098,14 @@ function scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redD
  else if(minute!==null&&minute>=96)endMinute=minute+0.5;
  const remainingMinutes=minute===null?45:clamp(endMinute-minute,0,90);
  const remaining=remainingMinutes/90;
- const totalRemainingGoals=2.55*remaining;
- // Pre-game strength, live pressure and red cards affect how remaining goals are split, not whether an already-level score is treated as a likely draw.
+ const pregameTotal=Number(m?.preGameHomeLambda)+Number(m?.preGameAwayLambda);
+ const baselineRate=Number.isFinite(pregameTotal)&&pregameTotal>0?clamp(.6*pregameTotal+.4*2.55,1.2,4.0):2.55;
+ const liveHomeXg=statNum(stats?.home?.xg),liveAwayXg=statNum(stats?.away?.xg),liveXgTotal=liveHomeXg!==null&&liveAwayXg!==null?liveHomeXg+liveAwayXg:null;
+ const elapsed=minute===null?45:clamp(minute,1,90),expectedXgToDate=baselineRate*elapsed/90;
+ const xgActivityFactor=liveXgTotal!==null?clamp(1+(liveXgTotal-expectedXgToDate)/Math.max(.6,expectedXgToDate)*.18,.78,1.25):1;
+ const pressureActivityFactor=clamp(1+Math.abs(pressure)*.12,.94,1.08);
+ const totalRemainingGoals=baselineRate*remaining*xgActivityFactor*pressureActivityFactor;
+ // Pre-game strength and live evidence shape the remaining-goal forecast; the final projected score determines the result label.
  const preShare=homeProb/Math.max(.001,homeProb+awayProb);
  let homeShare=clamp(preShare + pressure*.20 + (redCardsKnown?redDiff*.075:0),.12,.88);
  const homeLambda=totalRemainingGoals*homeShare;
@@ -1120,7 +1186,7 @@ function liveOpportunityAssessment(m,stats){
  const preDraw=drawProb;
  let live;
  if(hasScore){
-  live=scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redCardsKnown?redDiff:0,redCardsKnown,m);
+  live=scorelineLiveProbabilities(hs,as,minute,homeProb,awayProb,pressure,redCardsKnown?redDiff:0,redCardsKnown,m,stats);
  }else{
   // Without a usable score, retain a conservative pre-game baseline and only apply small pressure/manpower adjustments.
   let homeWeight=homeProb*Math.exp(pressure*.25+redCardImpact/2),awayWeight=awayProb*Math.exp(-pressure*.25-redCardImpact/2),drawWeight=drawProb;
@@ -1191,8 +1257,18 @@ function momentumTimelineHtml(m,assessment){
  const dots=points.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="${p.y<mid?"#54d69b":"#80b7ff"}"><title>${Math.round(p.minute)} min</title></circle>`).join("");
  return`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="Recorded match momentum timeline"><rect x="12" y="17" width="296" height="38" fill="#164b35" opacity=".25" rx="5"/><rect x="12" y="55" width="296" height="38" fill="#1d3c62" opacity=".3" rx="5"/><line x1="12" y1="55" x2="308" y2="55" stroke="#71839a" stroke-dasharray="3 3"/><polyline points="${line}" fill="none" stroke="#d5e2f2" stroke-width="2.5" stroke-linejoin="round"/>${dots}<text x="14" y="12" fill="#7ff0b1" font-size="9">${esc(m.home)}</text><text x="306" y="112" fill="#80b7ff" font-size="9" text-anchor="end">${esc(m.away)}</text><text x="12" y="112" fill="#a9b7ca" font-size="9">${Math.round(min)}′</text><text x="308" y="12" fill="#a9b7ca" font-size="9" text-anchor="end">${Math.round(max)}′</text></svg><div class="live-pressure-line"><span>Home pressure advantage</span><span>Away pressure advantage</span></div><p class="analytics-note">Indicative pressure index from available shots, shots on target, possession, xG and red-card balance. It is not an official statistic. Timeline samples begin when the app is open.</p>`;
 }
+function liveDivergenceAssessment(m,a,stats){
+ const p=m.preGameProbs||m.probs||{H:1/3,D:1/3,A:1/3};
+ const homeFav=Number(p.H)>=Number(p.A),preGap=Math.abs(Number(p.H)-Number(p.A));
+ const h=stats?.home||{},aw=stats?.away||{},hx=statNum(h.xg),ax=statNum(aw.xg),ht=statNum(h.shotsOnTarget),at=statNum(aw.shotsOnTarget);
+ const liveGap=hx!==null&&ax!==null?hx-ax:ht!==null&&at!==null?ht-at:null;
+ const statLabelText=hx!==null&&ax!==null?`live xG ${hx.toFixed(2)}–${ax.toFixed(2)}`:ht!==null&&at!==null?`shots on target ${ht}–${at}`:"";
+ const contradicts=liveGap!==null&&Math.abs(liveGap)>=(hx!==null&&ax!==null ? .65 : 2)&&(homeFav?liveGap<0:liveGap>0);
+ const strong=preGap>=.12&&contradicts;
+ return{strong,statLabelText,preGap,liveGap,available:a.available};
+}
 function liveCard(m,index,mode="all"){
- const id=eventId(m),stats=state.liveStats[id],a=liveOpportunityAssessment(m,stats),hasScore=a.hasScore,storm=goalStormSignal(stats);
+ const id=eventId(m),stats=state.liveStats[id],a=liveOpportunityAssessment(m,stats),hasScore=a.hasScore,storm=goalStormSignal(stats),divergence=liveDivergenceAssessment(m,a,stats);
  const probs=m.preGameProbs||m.probs||{H:1/3,D:1/3,A:1/3},prePct=integerOutcomePercents(probs),status=getLiveMinute(m),scoreLine=hasScore?`${a.hs}–${a.as}`:"—";
  const candidates= a.teams.filter(t=>!hasScore || t.score<=t.oppScore);
  const shownTeams=candidates.filter(t=>state.liveSituationFilter==="all" || (state.liveSituationFilter==="drawing"&&t.score===t.oppScore) || (state.liveSituationFilter==="losing"&&t.score<t.oppScore));
@@ -1225,7 +1301,8 @@ function liveCard(m,index,mode="all"){
   <div class="row between wrap"><span class="live-rank">${modeLabel}</span><div class="row wrap" style="gap:6px;justify-content:flex-end">${redCardFlag}${stormTag}${demoTag}</div></div>
   <div class="meta" style="margin-top:7px">${esc(m.league||"League")} · ${esc(m.statusName||"Live match")}</div>
   <div class="row between" style="margin:12px 0;gap:6px"><div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-game win: ${prePct.H}%</div></div><div style="text-align:center;min-width:82px"><div class="live-score">${scoreLine}</div><div class="live-minute">${esc(status)}</div></div><div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-game win: ${prePct.A}%</div></div></div>
-  ${a.projected?`<div class="notice"><strong>Live projected finish: ${esc(a.projected.score)}</strong> · ${outcomeName(a.projected.prediction)} most likely. This updates the pre-game baseline using the current score, time remaining, live shots, shots on target, possession, xG and red cards where available.</div>`:""}
+  ${a.projected?`<div class="notice"><strong>Live projected finish: ${esc(a.projected.score)}</strong> · ${outcomeName(a.projected.prediction)} most likely. This updates the pre-game baseline using current score, time remaining, pre-game expected goals, live pressure, xG activity and red cards where available.</div>`:""}
+  ${divergence.strong?`<div class="notice" style="border-left-color:var(--amber)"><strong>⚠️ Live performance differs from pre-match expectation</strong><div class="muted smalltext" style="margin-top:4px">The pre-match stronger side is currently behind on ${esc(divergence.statLabelText)}. Treat the live projection with extra caution.</div></div>`:""}
   <div class="live-pressure-strip"><div class="row between"><span class="smalltext">Live pressure balance</span><span class="muted smalltext">${a.available?`${a.available}/5 indicators`:'Stats unavailable'}</span></div><div class="dual-track" style="margin-top:7px"><span class="home-fill" style="width:${clamp((a.pressure+.55)/1.1*100,0,100)}%"></span><span class="away-fill" style="width:${clamp(100-(a.pressure+.55)/1.1*100,0,100)}%"></span></div><div class="live-pressure-line"><span>${esc(m.home)} ${a.pressure>.08?'↑ pressure edge':a.pressure<-.08?'↓ pressure lower':'· balanced'}</span><span>${esc(m.away)} ${a.pressure<-.08?'↑ pressure edge':a.pressure>.08?'↓ pressure lower':'· balanced'}</span></div></div>
   ${shownTeams.length?teamCards:`<div class="notice">No drawing or losing team matches the current situation filter.</div>`}
   <div class="row wrap"><span class="tag">Pre-game pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${a.available?`Stats: ${a.available}/5 indicators`:"Score/time only"}</span></div>
