@@ -500,7 +500,7 @@ function historyForTeam(previous,key){
   if(!isFinished(m))continue;
   const hk=teamKey(m,"H"),ak=teamKey(m,"A");if(key!==hk&&key!==ak)continue;
   const home=key===hk,gf=home?m.homeScore:m.awayScore,ga=home?m.awayScore:m.homeScore;
-  out.push({date:m.date,gf,ga,points:gf>ga?3:gf===ga?1:0,result:gf>ga?"W":gf===ga?"D":"L",opponent:home?m.away:m.home,venue:home?"home":"away"});
+  out.push({date:m.date,gf,ga,points:gf>ga?3:gf===ga?1:0,result:gf>ga?"W":gf===ga?"D":"L",opponent:home?m.away:m.home,opponentKey:home?ak:hk,venue:home?"home":"away"});
  }
  return out.sort((a,b)=>new Date(a.date)-new Date(b.date));
 }
@@ -517,9 +517,37 @@ function windowStats(hist,n,leagueAvg){
  return{attack:leagueAvg.all+(rawAttack-leagueAvg.all)*shrink,defence:leagueAvg.all+(rawDefence-leagueAvg.all)*shrink,
   ppg:avg(rows,x=>x.points,1.25),gd:avg(rows,x=>x.gf-x.ga,0),count,history:rows};
 }
+function oppositionAdjustedHistory(hist,teamRatings,leagueAvg){
+ // Adjust historical goals for the quality of opponents faced, using the current
+ // league-only 15/10/5 form ratings available before this fixture is predicted.
+ return hist.map(row=>{
+  const opponent=teamRatings.get(row.opponentKey);
+  if(!opponent)return row;
+  const opponentDefence=opponent.defence||leagueAvg.all;
+  const opponentAttack=opponent.attack||leagueAvg.all;
+  const adjustedFor=clamp(leagueAvg.all/Math.max(.35,opponentDefence),.65,1.45);
+  const adjustedAgainst=clamp(leagueAvg.all/Math.max(.35,opponentAttack),.65,1.45);
+  return {...row,gf:row.gf*adjustedFor,ga:row.ga*adjustedAgainst};
+ });
+}
 function blendedStats(hist,model,leagueAvg){
  const parts=WINDOWS.map(n=>windowStats(hist,n,leagueAvg)),w=model.weights,blend=k=>parts.reduce((s,p,i)=>s+p[k]*w[i],0);
  return{attack:blend("attack"),defence:blend("defence"),ppg:blend("ppg"),gd:blend("gd"),count:hist.length,history:hist.slice(-5),windows:parts};
+}
+function alignOutcomeProbabilities(probabilities,prediction){
+ // Preserve the model distribution unless it contradicts the score-led pick.
+ // In that case, transfer only enough probability from the current leader so
+ // the predicted outcome is strictly the most likely; normalize to exactly 1.
+ const p={H:Math.max(0,Number(probabilities?.H)||0),D:Math.max(0,Number(probabilities?.D)||0),A:Math.max(0,Number(probabilities?.A)||0)};
+ let sum=p.H+p.D+p.A;if(!sum){p.H=p.D=p.A=1/3;sum=1}
+ for(const k of ["H","D","A"])p[k]/=sum;
+ const other=["H","D","A"].filter(k=>k!==prediction).sort((a,b)=>p[b]-p[a])[0];
+ if(p[prediction]<=p[other]){
+  const transfer=Math.min(p[other],(p[other]-p[prediction])/2+.005);
+  p[other]-=transfer;p[prediction]+=transfer;
+ }
+ sum=p.H+p.D+p.A;for(const k of ["H","D","A"])p[k]/=sum;
+ return p;
 }
 function poisson(k,lambda){let p=Math.exp(-lambda);for(let i=1;i<=k;i++)p*=lambda/i;return p}
 function scoreDistribution(homeLambda,awayLambda,maxGoals=10){
@@ -554,27 +582,37 @@ function venueFormAdjustment(history,venue){
  };
 }
 function calculatePrediction(m,previous,model){
- const homeHist=historyForTeam(previous,teamKey(m,"H")),awayHist=historyForTeam(previous,teamKey(m,"A")),la=leagueAverages(previous);
+ const homeKey=teamKey(m,"H"),awayKey=teamKey(m,"A"),la=leagueAverages(previous);
+ const rawHomeHist=historyForTeam(previous,homeKey),rawAwayHist=historyForTeam(previous,awayKey);
+ // Build current league-only team ratings from the available completed results.
+ // These ratings are refreshed for every fixture, so opposition quality is not static.
+ const teamKeys=new Set();for(const row of previous){teamKeys.add(teamKey(row,"H"));teamKeys.add(teamKey(row,"A"))}
+ const teamRatings=new Map();
+ for(const key of teamKeys){
+  const hist=historyForTeam(previous,key);
+  const stats=blendedStats(hist,model,la);
+  teamRatings.set(key,stats);
+ }
+ const homeHist=oppositionAdjustedHistory(rawHomeHist,teamRatings,la),awayHist=oppositionAdjustedHistory(rawAwayHist,teamRatings,la);
  const h=blendedStats(homeHist,model,la),a=blendedStats(awayHist,model,la);
  const homeAttack=h.attack/Math.max(.5,la.all),awayAttack=a.attack/Math.max(.5,la.all);
  const homeDefence=h.defence/Math.max(.5,la.all),awayDefence=a.defence/Math.max(.5,la.all);
  const leagueHome=clamp(la.home,1.05,1.9),leagueAway=clamp(la.away,.75,1.5);
- // Apply a restrained venue adjustment when the historical sample contains home/away matches.
- const homeVenue=venueFormAdjustment(homeHist,"home"),awayVenue=venueFormAdjustment(awayHist,"away");
- const homeDefVenue=venueFormAdjustment(homeHist,"home"),awayDefVenue=venueFormAdjustment(awayHist,"away");
+ // Venue form is a restrained secondary factor, shrunk toward each team's overall form.
+ const homeVenue=venueFormAdjustment(rawHomeHist,"home"),awayVenue=venueFormAdjustment(rawAwayHist,"away");
+ const homeDefVenue=venueFormAdjustment(rawHomeHist,"home"),awayDefVenue=venueFormAdjustment(rawAwayHist,"away");
  const hl=clamp(leagueHome*homeAttack*awayDefence*1.04*homeVenue.attack*awayVenue.conceded,.15,4.2);
  const al=clamp(leagueAway*awayAttack*homeDefence*awayVenue.attack*homeDefVenue.conceded,.15,4.2);
- const dist=scoreDistribution(hl,al),probs=dist.probs;
- // Decision rule uses the unrounded expected-goal difference, before any displayed score is rounded.
+ const dist=scoreDistribution(hl,al);
+ // The expected-goal gap drives the outcome. A gap below 0.5 is a draw pick.
  const xgDifference=hl-al;
  const prediction=Math.abs(xgDifference)<.5?"D":xgDifference>0?"H":"A";
+ const probs=alignOutcomeProbabilities(dist.probs,prediction);
  const predictedScore=consistentPredictedScore(hl,al,prediction);
  const sorted=Object.values(probs).sort((x,y)=>y-x),coverage=clamp(Math.min(h.count,a.count)/10,0,1);
  const differenceStrength=clamp(Math.abs(xgDifference)/1.5,0,1);
  const rawConfidence=clamp(Math.round(3+(sorted[0]-sorted[1])*10+differenceStrength*2+coverage*2),1,9);
- // Close expected goals deliberately limit confidence; small samples cap it further.
- const minTeamSample=Math.min(h.count,a.count);
- const drawThresholdApplied=Math.abs(xgDifference)<.5;
+ const minTeamSample=Math.min(h.count,a.count),drawThresholdApplied=Math.abs(xgDifference)<.5;
  const confidenceLimit=drawThresholdApplied?6:9;
  const confidence=minTeamSample<5?Math.min(rawConfidence,6,confidenceLimit):Math.min(rawConfidence,confidenceLimit);
  return{probs,prediction,confidence,confidenceSample:minTeamSample,h,a,homeLambda:hl,awayLambda:al,xgDifference,drawThresholdApplied,homeVenueMatches:homeVenue.count,awayVenueMatches:awayVenue.count,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore,leagueAverage:la.all};
@@ -586,7 +624,8 @@ function updatePredictions(matches,index=state.activeIndex){
 }
 function resultString(m){return isFinished(m)?`${m.homeScore}–${m.awayScore}`:"vs"}
 function probsHtml(m){
- return`<div class="probrow">${[["H","Home"],["D","Draw"],["A","Away"]].map(([k,n])=>`<div class="prob"><span>${n}</span><strong>${Math.round(m.probs[k]*100)}%</strong><div class="progress"><span style="width:${Math.round(m.probs[k]*100)}%"></span></div></div>`).join("")}</div>`;
+ const pct=integerOutcomePercents(m.probs);
+ return`<div class="probrow">${[["H","Home"],["D","Draw"],["A","Away"]].map(([k,n])=>`<div class="prob"><span>${n}</span><strong>${pct[k]}%</strong><div class="progress"><span style="width:${pct[k]}%"></span></div></div>`).join("")}</div>`;
 }
 function formHtml(f){
  return!f?.history?.length?`<span class="muted smalltext">No league form yet</span>`:`<div class="formchips">${f.history.map(x=>`<span class="chip ${x.result}" title="${esc(x.opponent)}">${x.result}</span>`).join("")}</div>`;
@@ -657,7 +696,6 @@ function explainHtml(m){
  <li><strong>Confidence:</strong> ${m.confidence}/10. This is an indicative model rating, not a calibrated guarantee.${Math.min(m.h?.count??0,m.a?.count??0)<5?" The rating is capped at 6/10 because at least one team has fewer than five prior completed matches.":" Both teams have at least five prior completed matches."}</li>
  <li><strong>Displayed predicted score:</strong> ${esc(m.home)} ${m.predictedScore} ${esc(m.away)}.</li>
  <li><strong>Expected goals:</strong> ${esc(m.home)} ${m.homeLambda.toFixed(2)}; ${esc(m.away)} ${m.awayLambda.toFixed(2)}.</li>
- <li><strong>Most probable exact score:</strong> ${m.mostLikelyScore} (${(m.scoreProbability*100).toFixed(1)}%).</li>
  <li><strong>Recent form:</strong> ${esc(m.home)} — ${fmt(m.h)}; ${esc(m.away)} — ${fmt(m.a)}.</li>
  </ul><strong>${esc(m.home)} form</strong>${formHtml(m.h)}<strong>${esc(m.away)} form</strong>${formHtml(m.a)}</div></details>`;
 }
@@ -1046,6 +1084,19 @@ function liveStatsHtml(m,stats){
  }
  return rows.length?rows.join(""):`<div class="notice">The source returned no usable detailed statistics for this match. Score and status are available, but the stats breakdown is limited.</div>`;
 }
+function liveProjectedScore(hs,as,homeRemainingLambda,awayRemainingLambda){
+ const homeExpected=hs+Math.max(0,homeRemainingLambda||0),awayExpected=as+Math.max(0,awayRemainingLambda||0);
+ const gap=homeExpected-awayExpected;
+ let homeGoals=Math.max(hs,Math.round(homeExpected)),awayGoals=Math.max(as,Math.round(awayExpected));
+ // Keep the projected final score consistent with the same <0.5 draw rule.
+ if(Math.abs(gap)<.5){
+  const level=Math.max(hs,as,Math.round((homeExpected+awayExpected)/2));
+  homeGoals=level;awayGoals=level;
+ }else if(gap>0&&homeGoals<=awayGoals){homeGoals=awayGoals+1}
+ else if(gap<0&&awayGoals<=homeGoals){awayGoals=homeGoals+1}
+ const prediction=Math.abs(gap)<.5?"D":gap>0?"H":"A";
+ return{score:`${homeGoals}–${awayGoals}`,prediction,homeExpected,awayExpected,gap};
+}
 function liveOpportunityAssessment(m,stats){
  const p=m.preGameProbs||m.probs||{H:1/3,D:1/3,A:1/3};
  const homeProb=clamp(Number(p.H??1/3),.001,.998),awayProb=clamp(Number(p.A??1/3),.001,.998),drawProb=clamp(Number(p.D??1/3),.001,.998);
@@ -1074,7 +1125,12 @@ function liveOpportunityAssessment(m,stats){
   // Without a usable score, retain a conservative pre-game baseline and only apply small pressure/manpower adjustments.
   let homeWeight=homeProb*Math.exp(pressure*.25+redCardImpact/2),awayWeight=awayProb*Math.exp(-pressure*.25-redCardImpact/2),drawWeight=drawProb;
   const total=homeWeight+awayWeight+drawWeight||1;
-  live={H:homeWeight/total*100,D:drawWeight/total*100,A:awayWeight/total*100};
+  live={H:homeWeight/total*100,D:drawWeight/total*100,A:awayWeight/total*100,homeLambda:0,awayLambda:0};
+ }
+ const projected=hasScore?liveProjectedScore(hs,as,live.homeLambda,live.awayLambda):null;
+ if(projected){
+  const aligned=alignOutcomeProbabilities({H:live.H/100,D:live.D/100,A:live.A/100},projected.prediction);
+  live={...live,H:aligned.H*100,D:aligned.D*100,A:aligned.A*100};
  }
 
  const teamData=[
@@ -1090,7 +1146,7 @@ function liveOpportunityAssessment(m,stats){
   t.opportunityScore=Math.round(clamp(t.live*.48+upside*25+underdog*15+pressureScore*10,0,100));
   t.trailing=hasScore&&t.score<t.oppScore;
  }
- return{minute,hasScore,hs,as,homeStats,awayStats,available,live,teams:teamData,drawChance:live.D,pressure,hRed,aRed,redCardsKnown,redDiff,redCardImpact,homeProb,awayProb,preDraw};
+ return{minute,hasScore,hs,as,homeStats,awayStats,available,live,projected,teams:teamData,drawChance:live.D,pressure,hRed,aRed,redCardsKnown,redDiff,redCardImpact,homeProb,awayProb,preDraw};
 }
 function integerOutcomePercents(p){
  const keys=["H","D","A"],raw=keys.map(k=>Math.max(0,Number(p?.[k]??1/3))*100),floors=raw.map(Math.floor);
@@ -1150,7 +1206,7 @@ function liveCard(m,index,mode="all"){
   const redSummary=[a.hRed>0?`${m.home}: ${a.hRed}`:"",a.aRed>0?`${m.away}: ${a.aRed}`:""].filter(Boolean).join("; ");
   reasons.push(`Red-card adjustment applied (${redSummary}). The manpower effect is stronger earlier in the match and tapers as full time approaches.`);
  }else reasons.push("No red-card count was available from the match statistics feed; no red-card adjustment was assumed.");
- reasons.push("The live estimate models only goals remaining from the current score and time, using pre-game strength, available match pressure and red-card balance. It is heuristic and not calibrated; the opportunity score is a sorting aid, not a probability.");
+ reasons.push("The live projected finish starts from the current score and models only goals remaining, using pre-game strength, available match pressure and red-card balance. Its result is derived from that projected score under the same 0.5 goal-gap rule. Percentages are aligned so the displayed outcome remains the most likely; the model is heuristic and not yet calibrated. The opportunity score is a sorting aid, not a probability.");
  const teamCards=shownTeams.map(t=>{
    const drawing=hasScore&&t.score===t.oppScore,losing=hasScore&&t.score<t.oppScore;
    const label=drawing?"Currently drawing":losing?`Currently behind by ${t.oppScore-t.score}`:"Score unavailable";
@@ -1169,6 +1225,7 @@ function liveCard(m,index,mode="all"){
   <div class="row between wrap"><span class="live-rank">${modeLabel}</span><div class="row wrap" style="gap:6px;justify-content:flex-end">${redCardFlag}${stormTag}${demoTag}</div></div>
   <div class="meta" style="margin-top:7px">${esc(m.league||"League")} · ${esc(m.statusName||"Live match")}</div>
   <div class="row between" style="margin:12px 0;gap:6px"><div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-game win: ${prePct.H}%</div></div><div style="text-align:center;min-width:82px"><div class="live-score">${scoreLine}</div><div class="live-minute">${esc(status)}</div></div><div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-game win: ${prePct.A}%</div></div></div>
+  ${a.projected?`<div class="notice"><strong>Live projected finish: ${esc(a.projected.score)}</strong> · ${outcomeName(a.projected.prediction)} most likely. This updates the pre-game baseline using the current score, time remaining, live shots, shots on target, possession, xG and red cards where available.</div>`:""}
   <div class="live-pressure-strip"><div class="row between"><span class="smalltext">Live pressure balance</span><span class="muted smalltext">${a.available?`${a.available}/5 indicators`:'Stats unavailable'}</span></div><div class="dual-track" style="margin-top:7px"><span class="home-fill" style="width:${clamp((a.pressure+.55)/1.1*100,0,100)}%"></span><span class="away-fill" style="width:${clamp(100-(a.pressure+.55)/1.1*100,0,100)}%"></span></div><div class="live-pressure-line"><span>${esc(m.home)} ${a.pressure>.08?'↑ pressure edge':a.pressure<-.08?'↓ pressure lower':'· balanced'}</span><span>${esc(m.away)} ${a.pressure<-.08?'↑ pressure edge':a.pressure>.08?'↓ pressure lower':'· balanced'}</span></div></div>
   ${shownTeams.length?teamCards:`<div class="notice">No drawing or losing team matches the current situation filter.</div>`}
   <div class="row wrap"><span class="tag">Pre-game pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${a.available?`Stats: ${a.available}/5 indicators`:"Score/time only"}</span></div>
