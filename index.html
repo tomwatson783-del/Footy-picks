@@ -279,11 +279,11 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
  </div>
  <div class="controls">
   <div><label for="league">Competition</label><select id="league" data-default="eng.2"></select></div>
-  <div><label for="days">Fixture window</label><select id="days"><option value="today">Today</option><option value="3">Next 3 days</option><option value="7">Next 7 days</option><option value="14" selected>Next 14 days</option><option value="30">Next 30 days</select></div>
+  <div><label for="days">Fixture window</label><select id="days"><option value="today">Today</option><option value="tomorrow">Tomorrow</option><option value="3">Next 3 days</option><option value="7">Next 7 days</option><option value="14" selected>Next 14 days</option><option value="30">Next 30 days</option></select></div>
   <div><label for="sort">Sort by</label><select id="sort"><option value="date">Kick-off date</option><option value="confidence">Confidence</option></select></div>
  </div>
  <div class="row wrap" style="margin-bottom:12px"><button class="btn" id="load">Load / refresh predictions</button><button class="btn secondary" id="top10">Show Top 10 picks</button><button class="btn secondary" id="goalThreats">Show Goal Threats</button></div>
- <div class="notice">Predictions use earlier completed league results. Expected goals are averages, not exact-score guarantees. The result pick follows rounded expected goals: equal rounded totals mean draw; a win is suggested only when rounded totals differ. Outcome probabilities are separate statistical estimates. Displayed scores are rounded expected goals. Confidence is an indicative model rating, not a guarantee. Ratings are capped at 6/10 unless both teams have at least 5 prior completed matches. Probabilities are estimates, not betting advice.</div>
+ <div class="notice">Predictions use earlier completed league results. Expected goals are averages, not exact-score guarantees. The result pick compares unrounded expected goals: a gap below 0.50 means draw; a gap of 0.50 or more favours the higher value. Outcome probabilities are separate statistical estimates. Displayed scores are rounded expected goals. Confidence is an indicative model rating, not a guarantee. Ratings are capped at 6/10 unless both teams have at least 5 prior completed matches. Probabilities are estimates, not betting advice.</div>
  <div class="confidence-legend">
   <span class="tag confidence-high">🟢 Confidence 9–10</span><span class="tag confidence-medium">🟠 Confidence 7–8</span><span class="tag confidence-low">🔴 Confidence 0–6</span>
  </div>
@@ -430,16 +430,38 @@ function normaliseEvent(e,leagueId){
   venue:c.venue?.fullName||"",competitors:cs};
 }
 async function fetchMonth(id,month){
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
+ const year=Number(month.slice(0,4)),monthNumber=Number(month.slice(4,6));
+ const lastDay=new Date(year,monthNumber,0).getDate();
+ const dateRange=`${month}01-${month}${String(lastDay).padStart(2,"0")}`;
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
  try{
-  const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${id}/scoreboard?dates=${month}&limit=300`,{signal:controller.signal,cache:"no-store"});
+  const url=`https://site.api.espn.com/apis/site/v2/sports/soccer/${id}/scoreboard?dates=${dateRange}&limit=300`;
+  const r=await fetch(url,{signal:controller.signal,cache:"no-store"});
   if(!r.ok)throw Error("ESPN HTTP "+r.status);
-  const d=await r.json();return(d.events||[]).map(e=>normaliseEvent(e,id)).filter(Boolean);
+  const d=await r.json();
+  if(!d||!Array.isArray(d.events))throw Error("Unexpected ESPN response format");
+  return d.events.map(e=>normaliseEvent(e,id)).filter(Boolean);
  }finally{clearTimeout(timer)}
 }
-function monthsBack(n){const out=[],now=new Date();for(let i=n-1;i>=0;i--){const d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-i,1));out.push(`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}`)}return out}
+function monthsBack(n){
+ const out=[],now=new Date();
+ // Include history through the current month and next month for upcoming fixtures.
+ for(let i=n-1;i>=-1;i--){
+  const d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-i,1));
+  out.push(`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}`);
+ }
+ return [...new Set(out)];
+}
 async function fetchLeague(id,n=6,progress=()=>{}){
- const all=[];for(const [i,month] of monthsBack(n).entries()){progress(i,n,id);try{all.push(...await fetchMonth(id,month))}catch(e){console.warn(id,month,e.message)}}
+ const months=monthsBack(n),all=[];let next=0,done=0;
+ async function worker(){
+  while(next<months.length){
+   const month=months[next++];progress(done,months.length,id);
+   try{all.push(...await fetchMonth(id,month))}catch(e){console.warn(id,month,e.message)}
+   finally{done++;progress(done,months.length,id)}
+  }
+ }
+ await Promise.all(Array.from({length:Math.min(3,months.length)},()=>worker()));
  const unique=new Map();all.forEach(m=>unique.set(eventId(m),m));return[...unique.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
 }
 async function fetchAllLeagues(n=6,progress=()=>{}){
@@ -644,8 +666,14 @@ function matchCard(m){
  ${probsHtml(m)}<div class="row between wrap"><span class="tag">Pick: ${outcomeName(m.prediction)}</span><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(id)}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>${explainHtml(m)}</article>`;
 }
 function upcoming(){
- const now=new Date(),v=$("days").value,league=$("league").value,end=v==="today"?new Date(now.getFullYear(),now.getMonth(),now.getDate(),23,59,59,999).getTime():now.getTime()+(Number(v)||14)*86400000;
- let list=state.matches.filter(m=>!isFinished(m)&&new Date(m.date).getTime()>=now.getTime()-2*3600000&&new Date(m.date).getTime()<=end);
+ const now=new Date(),v=$("days").value,league=$("league").value;
+ const todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+ const tomorrowStart=todayStart+86400000;
+ let start=todayStart,end;
+ if(v==="today"){end=tomorrowStart-1}
+ else if(v==="tomorrow"){start=tomorrowStart;end=tomorrowStart+86400000-1}
+ else {start=now.getTime()-2*3600000;end=now.getTime()+(Number(v)||14)*86400000}
+ let list=state.matches.filter(m=>!isFinished(m)&&new Date(m.date).getTime()>=start&&new Date(m.date).getTime()<=end);
  if(league!=="all")list=list.filter(m=>m.leagueId===league);
  return list.sort($("sort").value==="confidence"?(a,b)=>b.confidence-a.confidence:(a,b)=>new Date(a.date)-new Date(b.date));
 }
@@ -765,7 +793,7 @@ async function loadData(){
   $("fixtureStatus").textContent=`Loaded ${state.matches.length} matches across ${Object.keys(LEAGUES).length} competitions.`+`${result.errors.length?" Some competitions unavailable: "+result.errors.join(", ")+".":""} ${added} new pre-match snapshots saved.`;
   renderFixtures();renderAccumulator();await refreshHistoryScoresFromLoaded();if(state.lastTest)renderTest(state.lastTest);
   setBusy("Ready",100);await new Promise(r=>setTimeout(r,250));hideBusy();
- }catch(e){hideBusy();$("connection").textContent="Error";$("fixtureList").innerHTML=`<div class="empty error">Couldn't load football data. Check your connection and try again. ${esc(e.message)}</div>`}
+ }catch(e){hideBusy();$("connection").textContent="Error";$("fixtureList").innerHTML=`<div class="empty error">Couldn't load football data. Check your connection and try again; the feed uses ESPN public data. ${esc(e.message)}</div>`}
  finally{state.loading=false;$("load").disabled=false;$("runTest").disabled=false}
 }
 async function refreshHistoryScoresFromLoaded(){
