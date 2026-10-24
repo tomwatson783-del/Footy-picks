@@ -506,11 +506,22 @@ function scoreDistribution(homeLambda,awayLambda,maxGoals=10){
  for(let h=0;h<=maxGoals;h++)for(let a=0;a<=maxGoals;a++){const p=ph[h]*pa[a];total+=p;if(h>a)H+=p;else if(h===a)D+=p;else A+=p;if(p>best.prob)best={score:`${h}â${a}`,prob:p}}
  const norm=total||1;return{probs:{H:H/norm,D:D/norm,A:A/norm},mostLikelyScore:best.score,scoreProbability:best.prob/norm};
 }
+function expectedGoalsOutcome(homeLambda,awayLambda){
+ // Decide from the unrounded values first. Tiny differences are draws; a win
+ // prediction requires an absolute expected-goal gap of at least 0.50.
+ const gap=Math.abs(homeLambda-awayLambda);
+ if(gap<0.5)return "D";
+ return homeLambda>awayLambda?"H":"A";
+}
 function consistentPredictedScore(homeLambda,awayLambda,prediction){
  let homeGoals=Math.max(0,Math.round(homeLambda)),awayGoals=Math.max(0,Math.round(awayLambda));
- if(prediction==="H"&&homeGoals<=awayGoals)homeGoals=awayGoals+1;
+ if(prediction==="D"){
+  // A draw score should represent the average scoring level, not let separate
+  // rounding of close values manufacture a winner.
+  const level=Math.max(0,Math.round((homeLambda+awayLambda)/2));
+  homeGoals=level;awayGoals=level;
+ }else if(prediction==="H"&&homeGoals<=awayGoals)homeGoals=awayGoals+1;
  else if(prediction==="A"&&awayGoals<=homeGoals)awayGoals=homeGoals+1;
- else if(prediction==="D"&&homeGoals!==awayGoals){if(homeGoals>awayGoals)homeGoals=awayGoals;else awayGoals=homeGoals}
  return`${homeGoals}â${awayGoals}`;
 }
 function calculatePrediction(m,previous,model){
@@ -520,19 +531,27 @@ function calculatePrediction(m,previous,model){
  const homeDefence=h.defence/Math.max(.5,la.all),awayDefence=a.defence/Math.max(.5,la.all);
  const leagueHome=clamp(la.home,1.05,1.9),leagueAway=clamp(la.away,.75,1.5);
  const hl=clamp(leagueHome*homeAttack*awayDefence*1.04,.15,4.2),al=clamp(leagueAway*awayAttack*homeDefence,.15,4.2);
- const dist=scoreDistribution(hl,al),probs=dist.probs;
- // Prediction rule: round each team's expected goals first. If both round to the same
- // whole-goal score, predict a draw. Only suggest a winner when the rounded totals differ.
- const roundedHome=Math.round(hl),roundedAway=Math.round(al);
- const prediction=roundedHome===roundedAway?"D":roundedHome>roundedAway?"H":"A";
- const predictedScore=`${roundedHome}â${roundedAway}`;
+ const dist=scoreDistribution(hl,al),rawProbs=dist.probs;
+ // Single source of truth: decide from the unrounded expected-goal gap.
+ // A gap below 0.50 is a draw even if independently rounded values differ.
+ const prediction=expectedGoalsOutcome(hl,al);
+ const predictedScore=consistentPredictedScore(hl,al,prediction);
+ // Keep outcome percentages aligned with the score-led pick. This is an explicitly
+ // score-aligned estimate (55% score-rule weight + 45% Poisson outcome distribution),
+ // not a claim that these percentages are independently calibrated betting odds.
+ const scoreWeight=.55,probs={H:rawProbs.H*(1-scoreWeight),D:rawProbs.D*(1-scoreWeight),A:rawProbs.A*(1-scoreWeight)};
+ probs[prediction]+=scoreWeight;
  const sorted=Object.values(probs).sort((x,y)=>y-x),coverage=clamp(Math.min(h.count,a.count)/10,0,1);
- const rawConfidence=clamp(Math.round(3+(sorted[0]-sorted[1])*16+coverage*2),1,9);
- // Equal rounded goal totals mean a draw and cap confidence to avoid overstating the call.
- const minTeamSample=Math.min(h.count,a.count);
- const confidenceBase=roundedHome===roundedAway?Math.min(rawConfidence,5):rawConfidence;
+ const minTeamSample=Math.min(h.count,a.count),goalGap=Math.abs(hl-al);
+ const rawConfidence=clamp(Math.round(3+(sorted[0]-sorted[1])*12+coverage*2),1,9);
+ // Close expected-goal values and limited history must never create a strong-confidence pick.
+ let confidenceBase=rawConfidence;
+ if(goalGap<.25)confidenceBase=Math.min(confidenceBase,3);
+ else if(goalGap<.5)confidenceBase=Math.min(confidenceBase,5);
+ if(prediction==="D")confidenceBase=Math.min(confidenceBase,6);
  const confidence=minTeamSample<5?Math.min(confidenceBase,6):confidenceBase;
- return{probs,prediction,confidence,confidenceSample:minTeamSample,h,a,homeLambda:hl,awayLambda:al,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore,leagueAverage:la.all};
+ const scoreProbability=poisson(roundedHome,hl)*poisson(roundedAway,al);
+ return{probs,prediction,confidence,confidenceSample:minTeamSample,h,a,homeLambda:hl,awayLambda:al,mostLikelyScore:predictedScore,scoreProbability,predictedScore,leagueAverage:la.all,rawProbs,goalGap};
 }
 function updatePredictions(matches,index=state.activeIndex){
  const by={};for(const m of matches)(by[m.leagueId]??=[]).push(m);
@@ -612,7 +631,8 @@ function explainHtml(m){
  <li><strong>Confidence:</strong> ${m.confidence}/10. This is an indicative model rating, not a calibrated guarantee.${Math.min(m.h?.count??0,m.a?.count??0)<5?" The rating is capped at 6/10 because at least one team has fewer than five prior completed matches.":" Both teams have at least five prior completed matches."}</li>
  <li><strong>Displayed predicted score:</strong> ${esc(m.home)} ${m.predictedScore} ${esc(m.away)}.</li>
  <li><strong>Expected goals:</strong> ${esc(m.home)} ${m.homeLambda.toFixed(2)}; ${esc(m.away)} ${m.awayLambda.toFixed(2)}.</li>
- <li><strong>Most probable exact score:</strong> ${m.mostLikelyScore} (${(m.scoreProbability*100).toFixed(1)}%).</li>
+ <li><strong>Probability of the predicted scoreline:</strong> ${m.predictedScore} (${(m.scoreProbability*100).toFixed(1)}% estimated exact-score probability).</li>
+ <li><strong>Probability method:</strong> Outcome percentages are score-aligned estimates blending the rounded-score rule with the goal-distribution model; they are not independently calibrated betting odds.</li>
  <li><strong>Recent form:</strong> ${esc(m.home)} â ${fmt(m.h)}; ${esc(m.away)} â ${fmt(m.a)}.</li>
  </ul><strong>${esc(m.home)} form</strong>${formHtml(m.h)}<strong>${esc(m.away)} form</strong>${formHtml(m.a)}</div></details>`;
 }
@@ -638,7 +658,7 @@ function renderFixtures(){
 }
 function renderTop10(){
  const all=upcoming().sort((a,b)=>b.probs[b.prediction]-a.probs[a.prediction]).slice(0,10);
- $("topbox").innerHTML=`<h2>Top 10 picks</h2><p class="muted smalltext">Ranked by the probability of the model's leading outcome. Higher probability does not mean a guaranteed result.</p><div class="confidence-legend"><span class="tag confidence-high">ð¢ 9â10</span><span class="tag confidence-medium">ð  7â8</span><span class="tag confidence-low">ð´ 0â6</span></div>`+all.map((m,i)=>{const added=state.acc.some(x=>x.id===eventId(m));return`<div class="pick"><div class="top-pick-header"><strong class="top-pick-teams">${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong><div class="top-pick-confidence">${confidenceBadge(m.confidence)}</div></div><div class="meta" style="margin-top:6px">${esc(m.league)} Â· ${esc(fmtDate(m.date))}</div><div class="row wrap" style="margin:10px 0"><span class="tag">Pick: ${outcomeName(m.prediction)}</span><span class="tag">${Math.round(m.probs[m.prediction]*100)}% probability</span></div><div class="meta" style="margin-bottom:9px">Predicted score: ${esc(m.predictedScore)}</div><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(eventId(m))}','${m.prediction}')">${added?"â Added":"Add pick"}</button></div>`}).join("")||`<div class="empty">No upcoming matches found.</div>`;
+ $("topbox").innerHTML=`<h2>Top 10 picks</h2><p class="muted smalltext">Ranked by the score-aligned estimate for the outcome implied by the rounded predicted score. These percentages are indicative, not independently calibrated betting odds.</p><div class="confidence-legend"><span class="tag confidence-high">ð¢ 9â10</span><span class="tag confidence-medium">ð  7â8</span><span class="tag confidence-low">ð´ 0â6</span></div>`+all.map((m,i)=>{const added=state.acc.some(x=>x.id===eventId(m));return`<div class="pick"><div class="top-pick-header"><strong class="top-pick-teams">${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong><div class="top-pick-confidence">${confidenceBadge(m.confidence)}</div></div><div class="meta" style="margin-top:6px">${esc(m.league)} Â· ${esc(fmtDate(m.date))}</div><div class="row wrap" style="margin:10px 0"><span class="tag">Pick: ${outcomeName(m.prediction)}</span><span class="tag">${Math.round(m.probs[m.prediction]*100)}% probability</span></div><div class="meta" style="margin-bottom:9px">Predicted score: ${esc(m.predictedScore)}</div><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(eventId(m))}','${m.prediction}')">${added?"â Added":"Add pick"}</button></div>`}).join("")||`<div class="empty">No upcoming matches found.</div>`;
 }
 function goalCountProbability(lambda, minimumGoals){
  let below=0;
@@ -830,30 +850,10 @@ function extractStats(summary,m){
  return result;
 }
 function attachLivePredictions(matches){
- const loadedById=new Map(state.matches.map(match=>[eventId(match),match]));
- const normTeam=value=>String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
- const sameFixture=(a,b)=>{
-  if(a.leagueId!==b.leagueId)return false;
-  const idsMatch=String(a.homeId)===String(b.homeId)&&String(a.awayId)===String(b.awayId);
-  const namesMatch=normTeam(a.home)===normTeam(b.home)&&normTeam(a.away)===normTeam(b.away);
-  const dateA=new Date(a.date).getTime(),dateB=new Date(b.date).getTime();
-  return (idsMatch||namesMatch)&&Number.isFinite(dateA)&&Number.isFinite(dateB)&&Math.abs(dateA-dateB)<36*60*60*1000;
- };
+ // Always rebuild live fixtures from the same score-aligned model used on the Fixtures tab.
+ // Do not let stored snapshots or stale cached predictions override the current rule.
  const model=MODELS[state.activeIndex]||MODELS[state.manualIndex]||MODELS[1];
  for(const match of matches){
-  const loaded=loadedById.get(eventId(match))||state.matches.find(row=>sameFixture(row,match)&&row.probs&&["H","D","A"].every(key=>Number.isFinite(Number(row.probs[key]))));
-  if(loaded?.probs&&["H","D","A"].every(key=>Number.isFinite(Number(loaded.probs[key])))){
-   const sum=Number(loaded.probs.H)+Number(loaded.probs.D)+Number(loaded.probs.A);
-   if(sum>0){
-    match.preGameProbs={H:Number(loaded.probs.H)/sum,D:Number(loaded.probs.D)/sum,A:Number(loaded.probs.A)/sum};
-    match.probs={...match.preGameProbs};
-    match.prediction=loaded.prediction||["H","D","A"].sort((a,b)=>match.probs[b]-match.probs[a])[0];
-    match.predictedScore=loaded.predictedScore;
-    match.confidence=loaded.confidence;
-    continue;
-   }
-  }
-  // Fallback to the same walk-forward model used by fixture predictions, based only on completed results before kick-off.
   const kickoff=new Date(match.date).getTime();
   const previous=state.matches.filter(row=>row.leagueId===match.leagueId&&isFinished(row)&&new Date(row.date).getTime()<kickoff);
   const forecast=calculatePrediction(match,previous,model);
@@ -862,9 +862,10 @@ function attachLivePredictions(matches){
   match.prediction=forecast.prediction;
   match.predictedScore=forecast.predictedScore;
   match.confidence=forecast.confidence;
+  match.homeLambda=forecast.homeLambda;
+  match.awayLambda=forecast.awayLambda;
  }
 }
-
 function liveOutcomeKey(m){return getOutcome(Number(m.homeScore),Number(m.awayScore))}
 function updateLiveHistory(completedMatches,liveMatches){
  const history=Array.isArray(state.liveHistory)?state.liveHistory:[];
@@ -1126,8 +1127,8 @@ function liveCard(m,index,mode="all"){
   <div class="row between" style="margin:12px 0;gap:6px"><div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-game win: ${prePct.H}%</div></div><div style="text-align:center;min-width:82px"><div class="live-score">${scoreLine}</div><div class="live-minute">${esc(status)}</div></div><div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-game win: ${prePct.A}%</div></div></div>
   <div class="live-pressure-strip"><div class="row between"><span class="smalltext">Live pressure balance</span><span class="muted smalltext">${a.available?`${a.available}/5 indicators`:'Stats unavailable'}</span></div><div class="dual-track" style="margin-top:7px"><span class="home-fill" style="width:${clamp((a.pressure+.55)/1.1*100,0,100)}%"></span><span class="away-fill" style="width:${clamp(100-(a.pressure+.55)/1.1*100,0,100)}%"></span></div><div class="live-pressure-line"><span>${esc(m.home)} ${a.pressure>.08?'â pressure edge':a.pressure<-.08?'â pressure lower':'Â· balanced'}</span><span>${esc(m.away)} ${a.pressure<-.08?'â pressure edge':a.pressure>.08?'â pressure lower':'Â· balanced'}</span></div></div>
   ${shownTeams.length?teamCards:`<div class="notice">No drawing or losing team matches the current situation filter.</div>`}
-  <div class="row wrap"><span class="tag">Pre-game pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${a.available?`Stats: ${a.available}/5 indicators`:"Score/time only"}</span></div>
-  <details><summary>Match stats &amp; estimate evidence</summary><div class="explain">${storm?`<div class="goal-storm-panel"><strong>â¡ Goal Storm signal</strong><div class="muted smalltext" style="margin-top:5px">High combined attacking activity: ${esc(storm.evidence.join(" Â· "))}. This indicates activity, not that a goal is imminent.</div></div>`:""}<div class="live-visual-grid"><div class="live-visual-card"><h4>In-Play Match Pulse Â· live radar</h4>${liveRadarHtml(m,stats)}</div><div class="live-visual-card"><h4>Match Momentum</h4>${momentumTimelineHtml(m,a)}</div></div><div class="analytics-grid"><div class="analytics-card full"><h4>Live statistics Â· Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div><div class="analytics-card"><h4>Factors behind the estimate</h4><ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div><div class="analytics-card"><h4>Pre-game outcome probabilities</h4><div class="live-prob"><div class="live-percent-card"><span>Home win</span><strong>${prePct.H}%</strong></div><div class="live-percent-card"><span>Draw</span><strong>${prePct.D}%</strong></div><div class="live-percent-card"><span>Away win</span><strong>${prePct.A}%</strong></div></div><p class="analytics-note">Live chances are heuristic estimates and have not been calibrated against historical in-play outcomes. Scoreline and time remaining drive the probability of the final outcome; pre-game strength, available live pressure and red-card balance affect the expected distribution of remaining goals.</p></div></div><div class="notice"><strong>Important:</strong> pre-game predictions are a baseline, not live market odds, so these estimates cannot establish betting value.</div></div></details>
+  <div class="row wrap"><span class="tag">Pre-game pick: ${outcomeName(m.prediction|| (probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D"))}</span><span class="tag">Pre-game score: ${esc(m.predictedScore||"â")}</span><span class="tag">${a.available?`Stats: ${a.available}/5 indicators`:"Score/time only"}</span></div>
+  <details><summary>Match stats &amp; estimate evidence</summary><div class="explain">${storm?`<div class="goal-storm-panel"><strong>â¡ Goal Storm signal</strong><div class="muted smalltext" style="margin-top:5px">High combined attacking activity: ${esc(storm.evidence.join(" Â· "))}. This indicates activity, not that a goal is imminent.</div></div>`:""}<div class="live-visual-grid"><div class="live-visual-card"><h4>In-Play Match Pulse Â· live radar</h4>${liveRadarHtml(m,stats)}</div><div class="live-visual-card"><h4>Match Momentum</h4>${momentumTimelineHtml(m,a)}</div></div><div class="analytics-grid"><div class="analytics-card full"><h4>Live statistics Â· Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div><div class="analytics-card"><h4>Factors behind the estimate</h4><ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div><div class="analytics-card"><h4>Pre-game outcome probabilities</h4><div class="live-prob"><div class="live-percent-card"><span>Home win</span><strong>${prePct.H}%</strong></div><div class="live-percent-card"><span>Draw</span><strong>${prePct.D}%</strong></div><div class="live-percent-card"><span>Away win</span><strong>${prePct.A}%</strong></div></div><p class="analytics-note">The pre-game pick and score use the same unrounded expected-goal rule as the Fixtures tab: a gap below 0.50 means a draw; a gap of 0.50 or more favours the higher expected-goal team. In-play chances are separate heuristic estimates: current score and time remaining drive the final-outcome distribution, with pre-game strength, available live pressure and red-card balance affecting remaining goals. They have not been calibrated against historical in-play outcomes.</p></div></div><div class="notice"><strong>Important:</strong> pre-game predictions are a baseline, not live market odds, so these estimates cannot establish betting value.</div></div></details>
   <div class="live-source">ESPN scoreboard${stats?" and match-summary feed":" feed"} Â· ${state.liveLastUpdated?"updated "+state.liveLastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"update time unavailable"}</div>
  </article>`;
 }
