@@ -1,4 +1,4 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -283,7 +283,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
   <div><label for="sort">Sort by</label><select id="sort"><option value="date">Kick-off date</option><option value="confidence">Confidence</option></select></div>
  </div>
  <div class="row wrap" style="margin-bottom:12px"><button class="btn" id="load">Load / refresh predictions</button><button class="btn secondary" id="top10">Show Top 10 picks</button><button class="btn secondary" id="goalThreats">Show Goal Threats</button></div>
- <div class="notice">Predictions use earlier completed league results. Expected goals are averages, not exact-score guarantees. Displayed scores are rounded estimates adjusted to agree with the predicted result. Confidence is an indicative model rating, not a guarantee. Ratings are capped at 6/10 unless both teams have at least 5 prior completed matches. Probabilities are estimates, not betting advice.</div>
+ <div class="notice">Predictions use earlier completed league results. Expected goals are averages, not exact-score guarantees. The result pick follows rounded expected goals: equal rounded totals mean draw; a win is suggested only when rounded totals differ. Outcome probabilities are separate statistical estimates. Displayed scores are rounded expected goals. Confidence is an indicative model rating, not a guarantee. Ratings are capped at 6/10 unless both teams have at least 5 prior completed matches. Probabilities are estimates, not betting advice.</div>
  <div class="confidence-legend">
   <span class="tag confidence-high">ð¢ Confidence 9â10</span><span class="tag confidence-medium">ð  Confidence 7â8</span><span class="tag confidence-low">ð´ Confidence 0â6</span>
  </div>
@@ -520,11 +520,18 @@ function calculatePrediction(m,previous,model){
  const homeDefence=h.defence/Math.max(.5,la.all),awayDefence=a.defence/Math.max(.5,la.all);
  const leagueHome=clamp(la.home,1.05,1.9),leagueAway=clamp(la.away,.75,1.5);
  const hl=clamp(leagueHome*homeAttack*awayDefence*1.04,.15,4.2),al=clamp(leagueAway*awayAttack*homeDefence,.15,4.2);
- const dist=scoreDistribution(hl,al),probs=dist.probs,prediction=["H","D","A"].sort((x,y)=>probs[y]-probs[x])[0];
- const predictedScore=consistentPredictedScore(hl,al,prediction),sorted=Object.values(probs).sort((x,y)=>y-x),coverage=clamp(Math.min(h.count,a.count)/10,0,1);
+ const dist=scoreDistribution(hl,al),probs=dist.probs;
+ // Prediction rule: round each team's expected goals first. If both round to the same
+ // whole-goal score, predict a draw. Only suggest a winner when the rounded totals differ.
+ const roundedHome=Math.round(hl),roundedAway=Math.round(al);
+ const prediction=roundedHome===roundedAway?"D":roundedHome>roundedAway?"H":"A";
+ const predictedScore=`${roundedHome}â${roundedAway}`;
+ const sorted=Object.values(probs).sort((x,y)=>y-x),coverage=clamp(Math.min(h.count,a.count)/10,0,1);
  const rawConfidence=clamp(Math.round(3+(sorted[0]-sorted[1])*16+coverage*2),1,9);
- // A rating cannot be high unless both teams have at least five completed prior matches.
- const minTeamSample=Math.min(h.count,a.count),confidence=minTeamSample<5?Math.min(rawConfidence,6):rawConfidence;
+ // Equal rounded goal totals mean a draw and cap confidence to avoid overstating the call.
+ const minTeamSample=Math.min(h.count,a.count);
+ const confidenceBase=roundedHome===roundedAway?Math.min(rawConfidence,5):rawConfidence;
+ const confidence=minTeamSample<5?Math.min(confidenceBase,6):confidenceBase;
  return{probs,prediction,confidence,confidenceSample:minTeamSample,h,a,homeLambda:hl,awayLambda:al,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore,leagueAverage:la.all};
 }
 function updatePredictions(matches,index=state.activeIndex){
@@ -813,21 +820,13 @@ function extractStats(summary,m){
  // Detect the latest goal from ESPN's play-by-play / key-event structures when supplied.
  const plays=[...(Array.isArray(summary?.plays)?summary.plays:Array.isArray(summary?.plays?.items)?summary.plays.items:[]),...(Array.isArray(summary?.keyEvents)?summary.keyEvents:[]),...(Array.isArray(summary?.scoringPlays)?summary.scoringPlays:[]),...(Array.isArray(summary?.commentary)?summary.commentary:[])];
  const minuteOf=play=>{const raw=play?.clock?.displayValue??play?.clock?.value??play?.time?.displayValue??play?.time??play?.displayClock??play?.minute??play?.period?.displayValue??"";const text=String(raw);const added=text.match(/(\d{1,3})\s*['â²â]?\s*\+\s*(\d{1,2})/);if(added)return Number(added[1])+Number(added[2]);const match=text.match(/(\d{1,3})/);return match?Number(match[1]):null};
+ const isGoal=play=>play?.scoringPlay===true||play?.scoreValue>0||/\bgoal\b|penalty scored|own goal/i.test(String(play?.text||play?.shortText||play?.type?.text||play?.type?.name||play?.headline||""));
  const eventStamp=play=>{const raw=play?.wallclock??play?.date??play?.timestamp??null;const stamp=raw===null?null:(typeof raw==="number"?(raw<1e12?raw*1000:raw):Date.parse(String(raw)));return Number.isFinite(stamp)?stamp:null};
- // Only accept an explicitly marked scoring play, or a positive score value paired with an actual goal description.
- // A commentary mention of "goal" alone (e.g. goalkeeper / missed goal / disallowed goal) is not a scoring event.
- const goalText=play=>String([play?.text,play?.shortText,play?.type?.text,play?.type?.name,play?.headline,play?.title].filter(Boolean).join(" "));
- const isGoal=play=>play?.scoringPlay===true||(Number(play?.scoreValue)>0&&/\bgoal\b|penalty scored|own goal/i.test(goalText(play)));
- const scoreTotal=validScore(m)?Number(m.homeScore)+Number(m.awayScore):0;
- const goalPlays=scoreTotal>0?plays.filter(isGoal).map(play=>({side:sideFor(play),minute:minuteOf(play),timestamp:eventStamp(play),text:goalText(play)||"Goal",scorer:String(play?.athlete?.displayName||play?.participants?.[0]?.athlete?.displayName||play?.player?.displayName||"")})).filter(g=>g.minute!==null).sort((a,b)=>(b.timestamp??b.minute)-(a.timestamp??a.minute)):[];
- // Never flash a goal when the scoreboard still says 0-0; wait for the authoritative score to update.
- if(goalPlays.length&&scoreTotal>0)result.lastGoal=goalPlays[0];
+ const goalPlays=plays.filter(isGoal).map(play=>({side:sideFor(play),minute:minuteOf(play),timestamp:eventStamp(play),text:String(play?.text||play?.shortText||play?.type?.text||"Goal"),scorer:String(play?.athlete?.displayName||play?.participants?.[0]?.athlete?.displayName||play?.player?.displayName||"")})).filter(g=>g.minute!==null).sort((a,b)=>(b.timestamp??b.minute)-(a.timestamp??a.minute));
+ if(goalPlays.length)result.lastGoal=goalPlays[0];
  const isRedCard=play=>/red[ _-]?card|second yellow|sent[ _-]?off|sending[ _-]?off|dismissal|straight red/i.test(String([play?.text,play?.shortText,play?.type?.text,play?.type?.name,play?.headline,play?.title].filter(Boolean).join(" ")));
  const redPlays=plays.filter(isRedCard).map(play=>{const text=String(play?.text||play?.shortText||play?.type?.text||play?.headline||"Red card"),normalized=text.toLowerCase();let side=sideFor(play);if(!side&&normalized.includes(String(m.home||"").toLowerCase()))side="home";if(!side&&normalized.includes(String(m.away||"").toLowerCase()))side="away";return{side,minute:minuteOf(play),timestamp:eventStamp(play),text,player:String(play?.athlete?.displayName||play?.participants?.[0]?.athlete?.displayName||play?.player?.displayName||"")}}).filter(e=>e.minute!==null);
- // ESPN can emit a team-level card event and then a player-enriched version of the same incident. Keep one per team/minute, preferring the player detail.
- const uniqueCards=new Map();
- for(const card of redPlays){const key=`${card.side||"unknown"}:${card.minute}`;const old=uniqueCards.get(key);if(!old||(!old.player&&card.player)||(card.player&&old.player&&(card.timestamp??0)>(old.timestamp??0)))uniqueCards.set(key,card)}
- result.redCardEvents=[...uniqueCards.values()].sort((a,b)=>(b.timestamp??b.minute)-(a.timestamp??a.minute));
+ result.redCardEvents=redPlays.sort((a,b)=>(b.timestamp??b.minute)-(a.timestamp??a.minute));
  return result;
 }
 function attachLivePredictions(matches){
@@ -1048,16 +1047,6 @@ function liveOpportunityAssessment(m,stats){
  }
  return{minute,hasScore,hs,as,homeStats,awayStats,available,live,teams:teamData,drawChance:live.D,pressure,hRed,aRed,redCardsKnown,redDiff,redCardImpact,homeProb,awayProb,preDraw};
 }
-function liveOutcomeTip(live){
- const entries=[{key:"H",label:"HOME WIN",prob:Number(live?.H??0)},{key:"D",label:"DRAW",prob:Number(live?.D??0)},{key:"A",label:"AWAY WIN",prob:Number(live?.A??0)}].sort((a,b)=>b.prob-a.prob);
- const top=entries[0],second=entries[1];
- if(!top||!Number.isFinite(top.prob))return {label:"NO CLEAR PREDICTION",prob:0,confidence:"Low",bet:"NO BET â insufficient data"};
- const margin=top.prob-second.prob;
- if(margin<0.01)return {label:"NO CLEAR LEADER",prob:top.prob,confidence:"Low",bet:"NO BET â probabilities are tied",margin};
- const confidence=top.prob>=65&&margin>=20?"High":top.prob>=50&&margin>=10?"Medium":"Low";
- const bet=confidence==="High"?"Potential candidate â check the odds":confidence==="Medium"?"Caution â compare with the odds":"NO BET â outcome too uncertain";
- return {label:top.label,prob:top.prob,confidence,bet,margin};
-}
 function integerOutcomePercents(p){
  const keys=["H","D","A"],raw=keys.map(k=>Math.max(0,Number(p?.[k]??1/3))*100),floors=raw.map(Math.floor);
  let remaining=100-floors.reduce((sum,n)=>sum+n,0);
@@ -1117,8 +1106,6 @@ function liveCard(m,index,mode="all"){
   reasons.push(`Red-card adjustment applied (${redSummary}). The manpower effect is stronger earlier in the match and tapers as full time approaches.`);
  }else reasons.push("No red-card count was available from the match statistics feed; no red-card adjustment was assumed.");
  reasons.push("The live estimate models only goals remaining from the current score and time, using pre-game strength, available match pressure and red-card balance. It is heuristic and not calibrated; the opportunity score is a sorting aid, not a probability.");
- const liveTip=liveOutcomeTip(a.live);
- const liveTipCard=`<div class="live-tip-panel" style="background:#142033;border:1px solid ${liveTip.confidence==="High"?"#347c60":liveTip.confidence==="Medium"?"#98732a":"var(--border)"};border-radius:11px;padding:12px;margin:10px 0"><div class="row between wrap"><strong>IN-PLAY MOST LIKELY OUTCOME: ${esc(liveTip.label)}</strong><span class="tag">${liveTip.prob.toFixed(1)}% Â· ${liveTip.confidence} confidence</span></div><div class="row wrap" style="gap:8px;margin-top:8px"><span class="tag">Home ${Number(a.live.H).toFixed(1)}%</span><span class="tag">Draw ${Number(a.live.D).toFixed(1)}%</span><span class="tag">Away ${Number(a.live.A).toFixed(1)}%</span></div><div class="muted smalltext" style="margin-top:5px">${esc(liveTip.bet)}. The outcome is selected strictly by the highest live probability; confidence does not change the prediction.</div></div>`;
  const teamCards=shownTeams.map(t=>{
    const drawing=hasScore&&t.score===t.oppScore,losing=hasScore&&t.score<t.oppScore;
    const label=drawing?"Currently drawing":losing?`Currently behind by ${t.oppScore-t.score}`:"Score unavailable";
@@ -1138,7 +1125,6 @@ function liveCard(m,index,mode="all"){
   <div class="meta" style="margin-top:7px">${esc(m.league||"League")} Â· ${esc(m.statusName||"Live match")}</div>
   <div class="row between" style="margin:12px 0;gap:6px"><div class="grow"><div class="live-team">${esc(m.home)}</div><div class="meta">Pre-game win: ${prePct.H}%</div></div><div style="text-align:center;min-width:82px"><div class="live-score">${scoreLine}</div><div class="live-minute">${esc(status)}</div></div><div class="grow" style="text-align:right"><div class="live-team">${esc(m.away)}</div><div class="meta">Pre-game win: ${prePct.A}%</div></div></div>
   <div class="live-pressure-strip"><div class="row between"><span class="smalltext">Live pressure balance</span><span class="muted smalltext">${a.available?`${a.available}/5 indicators`:'Stats unavailable'}</span></div><div class="dual-track" style="margin-top:7px"><span class="home-fill" style="width:${clamp((a.pressure+.55)/1.1*100,0,100)}%"></span><span class="away-fill" style="width:${clamp(100-(a.pressure+.55)/1.1*100,0,100)}%"></span></div><div class="live-pressure-line"><span>${esc(m.home)} ${a.pressure>.08?'â pressure edge':a.pressure<-.08?'â pressure lower':'Â· balanced'}</span><span>${esc(m.away)} ${a.pressure<-.08?'â pressure edge':a.pressure>.08?'â pressure lower':'Â· balanced'}</span></div></div>
-  ${liveTipCard}
   ${shownTeams.length?teamCards:`<div class="notice">No drawing or losing team matches the current situation filter.</div>`}
   <div class="row wrap"><span class="tag">Pre-game pick: ${outcomeName(probs.H>=probs.D&&probs.H>=probs.A?"H":probs.A>=probs.D?"A":"D")}</span><span class="tag">${a.available?`Stats: ${a.available}/5 indicators`:"Score/time only"}</span></div>
   <details><summary>Match stats &amp; estimate evidence</summary><div class="explain">${storm?`<div class="goal-storm-panel"><strong>â¡ Goal Storm signal</strong><div class="muted smalltext" style="margin-top:5px">High combined attacking activity: ${esc(storm.evidence.join(" Â· "))}. This indicates activity, not that a goal is imminent.</div></div>`:""}<div class="live-visual-grid"><div class="live-visual-card"><h4>In-Play Match Pulse Â· live radar</h4>${liveRadarHtml(m,stats)}</div><div class="live-visual-card"><h4>Match Momentum</h4>${momentumTimelineHtml(m,a)}</div></div><div class="analytics-grid"><div class="analytics-card full"><h4>Live statistics Â· Home vs away</h4>${liveStatsHtml(m,stats)}<div class="radar-legend"><span><i class="legend-dot home-dot"></i>${esc(m.home)}</span><span><i class="legend-dot away-dot"></i>${esc(m.away)}</span></div></div><div class="analytics-card"><h4>Factors behind the estimate</h4><ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div><div class="analytics-card"><h4>Pre-game outcome probabilities</h4><div class="live-prob"><div class="live-percent-card"><span>Home win</span><strong>${prePct.H}%</strong></div><div class="live-percent-card"><span>Draw</span><strong>${prePct.D}%</strong></div><div class="live-percent-card"><span>Away win</span><strong>${prePct.A}%</strong></div></div><p class="analytics-note">Live chances are heuristic estimates and have not been calibrated against historical in-play outcomes. Scoreline and time remaining drive the probability of the final outcome; pre-game strength, available live pressure and red-card balance affect the expected distribution of remaining goals.</p></div></div><div class="notice"><strong>Important:</strong> pre-game predictions are a baseline, not live market odds, so these estimates cannot establish betting value.</div></div></details>
@@ -1147,7 +1133,7 @@ function liveCard(m,index,mode="all"){
 }
 function renderRecentGoals(matches){
  const root=$("recentGoals");if(!root)return;
- const rows=(matches||[]).map(m=>{const goal=state.liveStats[eventId(m)]?.lastGoal;if(!goal||goal.minute===null||!validScore(m)||(Number(m.homeScore)+Number(m.awayScore)<=0))return null;const current=getElapsedLiveMinute(m);const age=Number.isFinite(goal.timestamp)?Math.max(0,(Date.now()-goal.timestamp)/60000):(current===null?null:Math.max(0,current-goal.minute));return{m,goal,age}}).filter(Boolean).sort((a,b)=>{const aa=a.age===null?999:a.age,bb=b.age===null?999:b.age;return aa-bb}).slice(0,5);
+ const rows=(matches||[]).map(m=>{const goal=state.liveStats[eventId(m)]?.lastGoal;if(!goal||goal.minute===null||!validScore(m))return null;const current=getElapsedLiveMinute(m);const age=Number.isFinite(goal.timestamp)?Math.max(0,(Date.now()-goal.timestamp)/60000):(current===null?null:Math.max(0,current-goal.minute));return{m,goal,age}}).filter(Boolean).sort((a,b)=>{const aa=a.age===null?999:a.age,bb=b.age===null?999:b.age;return aa-bb}).slice(0,5);
  if(!rows.length){root.innerHTML=`<div class="recent-goals-panel"><div class="row between wrap"><strong>â½ Latest goals</strong><span class="muted smalltext">Up to 5 live matches</span></div><p class="muted smalltext" style="margin:7px 0 0">Recent goal events arenât available from the feed for the current live matches.</p></div>`;return;}
  root.innerHTML=`<div class="recent-goals-panel"><div class="row between wrap" style="margin-bottom:5px"><strong>â½ Latest goals</strong><span class="muted smalltext">Most recent first Â· max 5</span></div>${rows.map(({m,goal,age})=>{const cls=age!==null&&age<=1?'goal-now':age!==null&&age<=2?'goal-two':age!==null&&age<=5?'goal-five':'';const label=age===null?`${goal.minute}â²`:age<=1?'JUST NOW':age<=2?'LAST 2 MIN':age<=5?'LAST 5 MIN':`${Math.round(age)} MIN AGO`;const side=goal.side==='home'?'home':goal.side==='away'?'away':null;const scorer=goal.scorer?` Â· ${esc(goal.scorer)}`:'';return`<div class="recent-goal-row ${cls}"><span class="goal-age">${label}</span><div><strong>${esc(m.home)} ${m.homeScore}â${m.awayScore} ${esc(m.away)}</strong><div class="muted smalltext">${esc(m.league||'Live')} Â· ${goal.minute}â²${scorer}</div></div><span class="tag">${side==='home'?'HOME GOAL':side==='away'?'AWAY GOAL':'GOAL'}</span></div>`}).join('')}</div>`;
 }
