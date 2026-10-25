@@ -381,6 +381,11 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
  <h2>Model Test</h2><p class="muted">Tests form, league influence and winner-selection thresholds on chronological match data; also evaluates historical xG and finishing when ESPN provides enough actual xG records. Each match is predicted using only results that happened before it.</p>
  <div class="notice"><strong>How to read the test:</strong> higher outcome accuracy is better; lower Brier score and log loss are better. Training automatically selects one precision-first recommendation using statistical confidence, chronological stability and worthwhile coverage. The later holdout can veto an update, but never selects another candidate.</div>
  <button class="btn" id="runTest">Run historical model test</button> <button class="btn secondary" id="cancelTest" style="display:none">Cancel test</button><p class="muted smalltext">One automatic decision: apply the proposed settings only if unseen results pass the precision-first safeguard; otherwise keep your current settings. Nothing changes until you click Copy and Save.</p><div id="outcomeCompare"></div><div id="confidenceCompare"></div><div id="testStatus" class="muted smalltext" style="margin:10px 0"></div><div id="testResults"></div>
+  <details class="panel" id="xgCoveragePanel" style="margin-top:16px"><summary style="cursor:pointer;font-weight:700">Historical xG Coverage — league-by-league</summary>
+   <p class="muted smalltext" style="margin-top:10px">Automatically checks ESPN match summaries during Model Test. Coverage is based on matches actually checked, not all matches in a league. Unchecked leagues are shown as Not tested. Historical xG is used only where both teams have sufficient earlier xG records; missing data uses the standard model.</p>
+   <div id="xgCoverageSummary" class="notice">Run Model Test to check historical xG coverage by competition.</div>
+   <div id="xgCoverageTable" class="tablewrap"></div>
+  </details>
   <h3>Confidence Analysis</h3><div class="panel"><div class="controls"><div><label>Confidence</label><select id="analysisConfidence"><option value="all">All</option></select></div><div><label>Risk</label><select id="analysisRisk"><option value="all">All</option><option>low</option><option>medium</option><option>high</option></select></div><div><label>Outcome</label><select id="analysisOutcome"><option value="all">All</option><option>H</option><option>D</option><option>A</option></select></div><div><label>Window set</label><select id="analysisWindow"><option value="all">All</option><option value="0">15/10/5</option><option value="1">10/6/3</option><option value="2">8/5/3</option></select></div><div><label>Weighting</label><select id="analysisWeight"><option value="all">All</option><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select></div><div><label>League</label><select id="analysisLeague"><option value="all">All</option></select></div><div><label>Look back (days)</label><select id="analysisDays"><option value="0">All</option><option value="30">30</option><option value="90">90</option><option value="365">365</option></select></div></div><button class="btn secondary" id="analysisRefresh">Refresh analysis</button><div id="analysisResults"></div></div>
   <h3>Exact-score Performance</h3><div id="exactResults"></div>
   <h3>Models compared</h3><div class="tablewrap"><table><thead><tr><th>Model</th><th>Longest</th><th>Middle</th><th>Shortest</th></tr></thead><tbody>
@@ -585,6 +590,25 @@ function adjustedXgLambdas(home,away,estimate,xgInfluence,finishingInfluence){
  if(!estimate)return [home,away];const x=clamp(xgInfluence/100,0,1),f=clamp(finishingInfluence/100,0,.3);
  return [clamp(home*(1-x)+estimate.home*x+f*estimate.homeFinishing,.15,4.2),clamp(away*(1-x)+estimate.away*x+f*estimate.awayFinishing,.15,4.2)];
 }
+// Diagnostic only: records actual summary requests and usable xG responses, without changing predictions.
+let xgCoverageAudit=null;
+function renderXgCoverage(){
+ const summary=$("xgCoverageSummary"),target=$("xgCoverageTable");if(!summary||!target)return;
+ if(!xgCoverageAudit){summary.textContent="Run Model Test to check historical xG coverage by competition.";target.replaceChildren();return}
+ const audit=xgCoverageAudit,rows=Object.entries(LEAGUES).map(([id,name])=>{
+  const a=audit.leagues[id]||{checked:0,found:0,cached:0,eligible:0};
+  const pct=a.checked?Math.round(a.found/a.checked*100):null;
+  const status=!a.checked?"Not tested":a.found===0?"Standard / no xG found":pct>=80?"High coverage":pct>=30?"Mixed coverage":"Low coverage";
+  const active=(state.historicalXgInfluence>0||state.finishingInfluence>0)?"Weights enabled; fixture-dependent":"Weights at 0%";
+  return `<tr><td>${esc(name)}</td><td>${a.checked}</td><td>${a.found}</td><td>${pct===null?"—":pct+"%"}</td><td>${esc(status)}</td><td>${a.found?esc(active):"Standard fallback"}</td></tr>`;
+ });
+ const tested=Object.values(audit.leagues).filter(a=>a.checked>0).length;
+ const found=Object.values(audit.leagues).filter(a=>a.found>0).length;
+ const total=Object.values(audit.leagues).reduce((v,a)=>v+a.checked,0);
+ const usable=Object.values(audit.leagues).reduce((v,a)=>v+a.found,0);
+ summary.textContent=`ESPN checked: ${tested}/${Object.keys(LEAGUES).length} competitions · ${usable}/${total} checked match summaries had usable xG · ${found} competitions returned xG. ${audit.limited?"Request sample capped; unchecked leagues are not confirmed unsupported.":""} Data availability does not guarantee enough prior matches for fixture-level xG. No manual input required.`;
+ target.innerHTML=`<table><thead><tr><th>League</th><th>Summaries checked</th><th>Usable xG</th><th>Coverage</th><th>Data status</th><th>Approved-model usage</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+}
 function historicalXgStatus(){const n=Object.keys(state.xgRecords).length;$("xgImportStatus").textContent=`ESPN historical xG cached: ${n} completed matches. Missing data always uses the standard model.`}
 function espnSummaryXg(data){
  // ESPN summary formats differ between competitions. Accept only explicit xG labels.
@@ -609,22 +633,34 @@ function espnSummaryXg(data){
 }
 async function enrichHistoricalXg(matches,maximum=240){
  const completed=matches.filter(isFinished).sort((a,b)=>new Date(b.date)-new Date(a.date));
- const unknown=completed.filter(m=>!state.xgRecords[eventId(m)]).slice(0,maximum);
+ const audit={leagues:{},limited:false};
+ for(const id of Object.keys(LEAGUES))audit.leagues[id]={checked:0,found:0,cached:0,eligible:completed.filter(m=>m.leagueId===id).length};
+ // Sample across competitions, rather than just the most recent matches globally.
+ const groups=new Map();for(const m of completed){if(!groups.has(m.leagueId))groups.set(m.leagueId,[]);groups.get(m.leagueId).push(m)}
+ const sampled=[];let more=true;
+ while(sampled.length<maximum&&more){more=false;for(const id of Object.keys(LEAGUES)){const g=groups.get(id);if(g?.length&&sampled.length<maximum){sampled.push(g.shift());more=true}}}
+ audit.limited=sampled.length<completed.length;
+ const unknown=[];
+ for(const m of sampled){const a=audit.leagues[m.leagueId];if(!a)continue;
+  if(state.xgRecords[eventId(m)]){a.checked++;a.found++;a.cached++}else unknown.push(m);
+ }
+ xgCoverageAudit=audit;renderXgCoverage();
  let next=0,found=0,checked=0;
  async function worker(){while(next<unknown.length){
   if(testCancelRequested)break;
-  const m=unknown[next++];const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),9000);
+  const m=unknown[next++],a=audit.leagues[m.leagueId],controller=new AbortController(),timer=setTimeout(()=>controller.abort(),9000);
   try{
    const url=`https://site.api.espn.com/apis/site/v2/sports/soccer/${encodeURIComponent(m.leagueId)}/summary?event=${encodeURIComponent(m.id)}`;
    const res=await fetch(url,{signal:controller.signal,cache:"default"});
-   if(res.ok){const record=espnSummaryXg(await res.json());if(record){state.xgRecords[eventId(m)]=record;found++}}
-  }catch(e){console.debug("Historical xG unavailable",m.leagueId,m.id)}finally{clearTimeout(timer);checked++}
-  if(checked%15===0){historicalXgStatus();await new Promise(resolve=>setTimeout(resolve,0))}
+   if(res.ok){const record=espnSummaryXg(await res.json());if(record){state.xgRecords[eventId(m)]=record;found++;a.found++}}
+  }catch(e){console.debug("Historical xG unavailable",m.leagueId,m.id)}finally{clearTimeout(timer);checked++;a.checked++}
+  if(checked%15===0){historicalXgStatus();renderXgCoverage();await new Promise(resolve=>setTimeout(resolve,0))}
  }}
  await Promise.all(Array.from({length:3},()=>worker()));
- store("fp_historical_xg",state.xgRecords);attachHistoricalXg(matches);attachHistoricalXg(state.matches);historicalXgStatus();
+ store("fp_historical_xg",state.xgRecords);attachHistoricalXg(matches);attachHistoricalXg(state.matches);historicalXgStatus();renderXgCoverage();
  return {checked,found,total:Object.keys(state.xgRecords).length};
 }
+
 function historyForTeam(previous,key){
  const out=[];
  for(const m of previous){
