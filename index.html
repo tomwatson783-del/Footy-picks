@@ -416,6 +416,7 @@ const LEAGUES={
  "esp.1":"La Liga","ger.1":"Bundesliga","ita.1":"Serie A","fra.1":"Ligue 1",
  "ned.1":"Eredivisie","por.1":"Primeira Liga","ger.2":"2. Bundesliga","bel.1":"Belgian Pro League",
  "tur.1":"Turkish Süper Lig","aut.1":"Austrian Bundesliga","sco.1":"Scottish Premiership","ita.2":"Italian Serie B",
+ "usa.1":"Major League Soccer","bra.1":"Brazilian Série A","mex.1":"Liga MX",
  "uefa.champions":"Champions League","uefa.europa":"Europa League"
 };
 // Populate both competition filters from one shared list so they cannot drift apart.
@@ -1757,7 +1758,7 @@ function renderWeeklyTop6(){
 async function fetchLiveSchedule(){
  const filter=$("liveStatusFilter");if(!filter)return;
  try{
-  const ids=["eng.1","eng.2","eng.3","eng.4","esp.1","ger.1","ita.1","fra.1","uefa.champions","uefa.europa"];
+  const ids=["eng.1","eng.2","eng.3","eng.4","esp.1","ger.1","ita.1","fra.1","uefa.champions","uefa.europa","usa.1","bra.1","mex.1"];
   const now=new Date(),month=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}`;
   const results=await Promise.all(ids.map(async id=>{try{return await fetchMonth(id,month)}catch{return[]}}));
   const map=new Map();results.flat().forEach(m=>map.set(eventId(m),m));
