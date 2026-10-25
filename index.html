@@ -998,21 +998,62 @@ function outcomeMetrics(rows,homeGap,awayGap){
  for(const r of rows){const pick=gapOutcome(r.xgDifference,homeGap,awayGap),bucket=out.by[pick];bucket.n++;out.actual[r.actualOutcome]++;if(pick===r.actualOutcome){bucket.hits++;out.correct++;out.recall[pick]++}}
  out.accuracy=out.total?out.correct/out.total:0;out.balanced=["H","D","A"].reduce((sum,k)=>sum+(out.actual[k]?out.recall[k]/out.actual[k]:0),0)/3;return out
 }
+function wilsonLower(hits,total){
+ if(!total)return 0;const z=1.645,p=hits/total,z2=z*z,denom=1+z2/total;
+ return (p+z2/(2*total)-z*Math.sqrt((p*(1-p)+z2/(4*total))/total))/denom;
+}
+function selectionMetrics(m){
+ const wins=m.by.H.n+m.by.A.n,hits=m.by.H.hits+m.by.A.hits;
+ return {picks:wins,hits,precision:wins?hits/wins:0,coverage:m.total?wins/m.total:0,
+  lower:wilsonLower(hits,wins),home:m.by.H.n,away:m.by.A.n};
+}
+function chooseBalancedOutcome(candidates){
+ // Only compare statistically meaningful candidates. Neither threshold endpoint receives a bonus.
+ const viable=candidates.filter(c=>c.selection.home>=20&&c.selection.away>=20&&c.selection.picks>=80&&c.selection.coverage>=.15);
+ if(!viable.length)return null;
+ // Remove dominated candidates: another candidate must have at least as strong a conservative
+ // precision estimate AND at least as much selection coverage.
+ const sorted=viable.slice().sort((a,b)=>b.selection.coverage-a.selection.coverage||b.selection.lower-a.selection.lower);
+ const frontier=[];let bestLower=-1;
+ for(const c of sorted){if(c.selection.lower>bestLower+1e-10){frontier.push(c);bestLower=c.selection.lower}}
+ // Knee of the precision/coverage frontier: normalise both axes and choose the point
+ // with the largest perpendicular improvement over the straight line between extremes.
+ const loP=Math.min(...frontier.map(c=>c.selection.lower)),hiP=Math.max(...frontier.map(c=>c.selection.lower));
+ const loC=Math.min(...frontier.map(c=>c.selection.coverage)),hiC=Math.max(...frontier.map(c=>c.selection.coverage));
+ const score=c=>{const x=(c.selection.coverage-loC)/Math.max(1e-9,hiC-loC),y=(c.selection.lower-loP)/Math.max(1e-9,hiP-loP);
+  return .7*y+.3*x};
+ let chosen;
+ if(frontier.length<3||hiP-loP<.005||hiC-loC<.05){
+  chosen=frontier.slice().sort((a,b)=>score(b)-score(a))[0];
+ }else{
+  // On normalised axes, the endpoints are (1,0) and (0,1); maximise x+y-1.
+  // Tiny differences in noisy training data are resolved using conservative precision.
+  chosen=frontier.slice().sort((a,b)=>{
+   const knee=c=>((c.selection.coverage-loC)/(hiC-loC)+(c.selection.lower-loP)/(hiP-loP)-1);
+   return knee(b)-knee(a)||score(b)-score(a);
+  })[0];
+ }
+ chosen.frontierCount=frontier.length;chosen.viableCount=viable.length;
+ chosen.selectionMethod='Conservative home/away precision–coverage frontier knee';
+ return chosen;
+}
 async function optimiseOutcome(test){
  const candidates=[],gaps=Array.from({length:15},(_,i)=>+(0.05+i*.05).toFixed(2)),groups=new Map();
  for(const r of test.training){let g=groups.get(r.key);if(!g){g={train:[],hold:[]};groups.set(r.key,g)}g.train.push(r)}
  for(const r of test.records){let g=groups.get(r.key);if(!g){g={train:[],hold:[]};groups.set(r.key,g)}g.hold.push(r)}
  const models=modelCombinations(),total=models.length*gaps.length*gaps.length;let done=0;
  for(const model of models){testCheckpoint();const group=groups.get(model.key)||{train:[],hold:[]},train=group.train,hold=group.hold;
-  if(train.length<state.minSample||hold.length<Math.max(25,Math.ceil(state.minSample*.3))){done+=225;testProgress("Optimising outcome thresholds",done,total,84,92);await testYield();continue}
-  let best=null;
-  for(const hg of gaps){for(const ag of gaps){const m=outcomeMetrics(train,hg,ag),quality=m.accuracy+.08*m.balanced;
-   if(!best||quality>best.quality)best={modelIndex:model.modelIndex,windowIndex:model.windowIndex,homeGap:hg,awayGap:ag,quality,train:m,holdRows:hold.length};done++}
-   testCheckpoint();testProgress("Optimising outcome thresholds",done,total,84,92);await testYield();
+  if(train.length<state.minSample||hold.length<Math.max(25,Math.ceil(state.minSample*.3))){done+=225;testProgress("Optimising selection quality",done,total,84,92);await testYield();continue}
+  for(const hg of gaps){for(const ag of gaps){const m=outcomeMetrics(train,hg,ag),selection=selectionMetrics(m);
+   candidates.push({modelIndex:model.modelIndex,windowIndex:model.windowIndex,homeGap:hg,awayGap:ag,
+    quality:selection.lower,selection,train:m,holdRows:hold.length});done++}
+   testCheckpoint();testProgress("Optimising selection quality",done,total,84,92);await testYield();
   }
-  if(best){best.hold=outcomeMetrics(hold,best.homeGap,best.awayGap);candidates.push(best)}
  }
- candidates.sort((a,b)=>b.quality-a.quality);return candidates[0]||null
+ const chosen=chooseBalancedOutcome(candidates);
+ if(chosen){const hold=(groups.get(`${chosen.windowIndex}-${chosen.modelIndex}`)||{hold:[]}).hold;
+  chosen.hold=outcomeMetrics(hold,chosen.homeGap,chosen.awayGap)}
+ return chosen;
 }
 function confidenceQuality(rows,cfg){const buckets=new Map();let count=0,concordant=0,discordant=0;for(const r of rows){const c=calibrationScore(r,cfg),b=buckets.get(c)||{n:0,hits:0};b.n++;if(r.prediction===r.actualOutcome)b.hits++;buckets.set(c,b)}const sorted=[...buckets].sort((a,b)=>a[0]-b[0]);for(let i=0;i<sorted.length;i++)for(let j=i+1;j<sorted.length;j++){const a=sorted[i][1],b=sorted[j][1];if(a.n<5||b.n<5)continue;const pair=a.n*b.n,delta=b.hits/b.n-a.hits/a.n;if(delta>0)concordant+=pair*delta;else discordant+=pair*(-delta)}const covered=sorted.filter(x=>x[1].n>=5).length;const quality=(concordant-discordant)/Math.max(1,rows.length*rows.length)+Math.min(covered,6)*.002;return{quality,buckets:sorted,covered}}
 async function optimiseConfidence(test){
@@ -1036,7 +1077,7 @@ function testRate(n,d){return `${testPct(n,d)} (${n}/${d})`}
 function metricSummary(m){return `${testPct(m.correct,m.total)} (${m.correct}/${m.total}) · Home ${testPct(m.by.H.hits,m.by.H.n)} (${m.by.H.n}) · Draw ${testPct(m.by.D.hits,m.by.D.n)} (${m.by.D.n}) · Away ${testPct(m.by.A.hits,m.by.A.n)} (${m.by.A.n})`}
 function confidenceSummary(rows,cfg){const m=confidenceQuality(rows,cfg);return m.buckets.map(([c,b])=>`${c}/10: ${testRate(b.hits,b.n)}`).join(" · ")||"No eligible matches"}
 function renderRecommendations(test){const rec=test.recommendation,conf=test.confidenceRecommendation,curModel=MODELS[state.activeIndex],curWin=WINDOW_SETS[state.activeWindow];const head=`<tr><th>Setting</th><th>Current (Settings)</th><th>Recommended (Test)</th></tr>`;
- if(rec){const rows=test.records.filter(r=>r.key===`${rec.windowIndex}-${rec.modelIndex}`),currentRows=test.records.filter(r=>r.key===`${state.activeWindow}-${state.activeIndex}`),common=new Set(rows.map(r=>r.id)),current=currentRows.filter(r=>common.has(r.id)),recommended=rows.filter(r=>new Set(current.map(x=>x.id)).has(r.id)),cur=outcomeMetrics(current,state.homeGap,state.awayGap),pro=outcomeMetrics(recommended,rec.homeGap,rec.awayGap);$("outcomeCompare").innerHTML=`<div class="panel"><h3>Outcome Prediction · Current vs Recommended</h3><div class="tablewrap"><table><thead>${head}</thead><tbody><tr><td>Form windows</td><td>${curWin.join(" / ")}</td><td><strong>${WINDOW_SETS[rec.windowIndex].join(" / ")}</strong></td></tr><tr><td>Form weighting</td><td>${curModel.short} — ${curModel.weights.join(" / ")}</td><td><strong>${MODELS[rec.modelIndex].short} — ${MODELS[rec.modelIndex].weights.join(" / ")}</strong></td></tr><tr><td>Home-win xG gap</td><td>${state.homeGap.toFixed(2)}</td><td><strong>${rec.homeGap.toFixed(2)}</strong></td></tr><tr><td>Away-win xG gap</td><td>${state.awayGap.toFixed(2)}</td><td><strong>${rec.awayGap.toFixed(2)}</strong></td></tr><tr><td>Holdout outcome accuracy (all picks)</td><td>${testRate(cur.correct,cur.total)}</td><td>${testRate(pro.correct,pro.total)}</td></tr><tr><td>Home-win precision</td><td>${testRate(cur.by.H.hits,cur.by.H.n)}</td><td>${testRate(pro.by.H.hits,pro.by.H.n)}</td></tr><tr><td>Draw precision</td><td>${testRate(cur.by.D.hits,cur.by.D.n)}</td><td>${testRate(pro.by.D.hits,pro.by.D.n)}</td></tr><tr><td>Away-win precision</td><td>${testRate(cur.by.A.hits,cur.by.A.n)}</td><td>${testRate(pro.by.A.hits,pro.by.A.n)}</td></tr></tbody></table></div><p class="muted smalltext">Selected on ${rec.train.total} earlier matches; compared on ${cur.total} common unseen holdout matches. Threshold search: 0.05–0.75 in 0.05 increments (15 home × 15 away thresholds across 12 window/weight combinations). Holdout is evaluation only, not selection. Each result shows percentage (correct picks / total picks). Overall accuracy is weighted by the number of home, draw and away picks, so it can rise even when each individual precision falls if the prediction mix changes. Check category counts before applying a recommendation.</p><button class="btn secondary" onclick="copyOutcomeRecommendation()">Copy recommendation into Settings (not saved)</button></div>`;
+ if(rec){const rows=test.records.filter(r=>r.key===`${rec.windowIndex}-${rec.modelIndex}`),currentRows=test.records.filter(r=>r.key===`${state.activeWindow}-${state.activeIndex}`),common=new Set(rows.map(r=>r.id)),current=currentRows.filter(r=>common.has(r.id)),recommended=rows.filter(r=>new Set(current.map(x=>x.id)).has(r.id)),cur=outcomeMetrics(current,state.homeGap,state.awayGap),pro=outcomeMetrics(recommended,rec.homeGap,rec.awayGap);$("outcomeCompare").innerHTML=`<div class="panel"><h3>Outcome Prediction · Current vs Recommended</h3><div class="tablewrap"><table><thead>${head}</thead><tbody><tr><td>Form windows</td><td>${curWin.join(" / ")}</td><td><strong>${WINDOW_SETS[rec.windowIndex].join(" / ")}</strong></td></tr><tr><td>Form weighting</td><td>${curModel.short} — ${curModel.weights.join(" / ")}</td><td><strong>${MODELS[rec.modelIndex].short} — ${MODELS[rec.modelIndex].weights.join(" / ")}</strong></td></tr><tr><td>Home-win xG gap</td><td>${state.homeGap.toFixed(2)}</td><td><strong>${rec.homeGap.toFixed(2)}</strong></td></tr><tr><td>Away-win xG gap</td><td>${state.awayGap.toFixed(2)}</td><td><strong>${rec.awayGap.toFixed(2)}</strong></td></tr><tr><td><strong>Home/Away selection precision (primary)</strong></td><td><strong>${testRate(cur.by.H.hits+cur.by.A.hits,cur.by.H.n+cur.by.A.n)}</strong></td><td><strong>${testRate(pro.by.H.hits+pro.by.A.hits,pro.by.H.n+pro.by.A.n)}</strong></td></tr><tr><td>Home/Away selection coverage</td><td>${testRate(cur.by.H.n+cur.by.A.n,cur.total)}</td><td>${testRate(pro.by.H.n+pro.by.A.n,pro.total)}</td></tr><tr><td>Incorrect Home/Away selections</td><td>${cur.by.H.n+cur.by.A.n-cur.by.H.hits-cur.by.A.hits}</td><td>${pro.by.H.n+pro.by.A.n-pro.by.H.hits-pro.by.A.hits}</td></tr><tr><td>Holdout outcome accuracy (all picks)</td><td>${testRate(cur.correct,cur.total)}</td><td>${testRate(pro.correct,pro.total)}</td></tr><tr><td>Home-win precision</td><td>${testRate(cur.by.H.hits,cur.by.H.n)}</td><td>${testRate(pro.by.H.hits,pro.by.H.n)}</td></tr><tr><td>Draw precision</td><td>${testRate(cur.by.D.hits,cur.by.D.n)}</td><td>${testRate(pro.by.D.hits,pro.by.D.n)}</td></tr><tr><td>Away-win precision</td><td>${testRate(cur.by.A.hits,cur.by.A.n)}</td><td>${testRate(pro.by.A.hits,pro.by.A.n)}</td></tr></tbody></table></div><p class="muted smalltext">Selected on ${rec.train.total} earlier matches; compared on ${cur.total} common unseen holdout matches. Threshold search: 0.05–0.75 in 0.05 increments (15 home × 15 away thresholds across 12 window/weight combinations). Holdout is evaluation only, not selection. Each result shows percentage (correct picks / total picks). Recommendation is selected on training data using the knee of the conservative home/away precision–coverage frontier, not overall accuracy or maximum precision alone. Candidates need at least 80 home/away selections, at least 20 of each type, and 15% coverage in training. ${rec.viableCount} candidates passed these safeguards; ${rec.frontierCount} were non-dominated. Holdout results above are unseen validation, not a guarantee of betting profitability. Compare the home and away sample counts before applying.</p><button class="btn secondary" onclick="copyOutcomeRecommendation()">Copy recommendation into Settings (not saved)</button></div>`;
  }else $("outcomeCompare").innerHTML=`<div class="notice">Not enough common eligible training/holdout fixtures for an outcome recommendation at the selected minimum sample.</div>`;
  if(conf){const c=state.confidenceConfig,p=conf.config.points,cp=c.points,rows=test.records.filter(r=>r.key===`${rec.windowIndex}-${rec.modelIndex}`).map(r=>withThresholdPrediction(r,rec));$("confidenceCompare").innerHTML=`<div class="panel"><h3>Confidence · Current vs Recommended</h3><div class="tablewrap"><table><thead>${head}</thead><tbody>${[["Probability separation",cp[0],p[0]],["Goal-gap / draw balance",cp[1],p[1]],["Historical coverage",cp[2],p[2]],["Supporting evidence",cp[3],p[3]],["Total points",10,10],["Medium-risk deduction",c.mediumPenalty,conf.config.mediumPenalty],["High-risk deduction",c.highPenalty,conf.config.highPenalty]].map(x=>`<tr><td>${x[0]}</td><td>${x[1]}</td><td><strong>${x[2]}</strong></td></tr>`).join("")}</tbody></table></div><p><strong>Current confidence hit rates:</strong> ${confidenceSummary(rows,c)}</p><p><strong>Recommended confidence hit rates:</strong> ${confidenceSummary(rows,conf.config)}</p><p class="muted smalltext">Confidence weights selected on earlier matches, tested on ${conf.sample} later matches. Higher ratings should have higher hit rates; small buckets are not reliable. This changes ratings only, never outcomes. Confidence is not a literal probability.</p><button class="btn secondary" onclick="copyConfidenceRecommendation()">Copy confidence recommendation into Settings (not saved)</button></div>`;}else $("confidenceCompare").innerHTML=`<div class="notice">Not enough historical data for confidence optimisation.</div>`;
  $("settingsOutcomeRecommendation").innerHTML=rec?`Latest test recommendation: ${WINDOW_SETS[rec.windowIndex].join("/")} · ${MODELS[rec.modelIndex].short} · Home ${rec.homeGap.toFixed(2)} · Away ${rec.awayGap.toFixed(2)}. <button class="btn small secondary" onclick="copyOutcomeRecommendation()">Copy into fields</button>`:"No validated recommendation yet.";
