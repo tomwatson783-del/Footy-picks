@@ -359,8 +359,8 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 
 <section id="test" hidden>
  <h2>Model Test</h2><p class="muted">Compares 12 window-and-weight combinations and 21 hybrid league-influence settings on a later chronological test period. Each match is predicted using only results that happened before it.</p>
- <div class="notice"><strong>How to read the test:</strong> higher outcome accuracy is better; lower Brier score and log loss are better. Training selects a balanced precision–coverage recommendation; later holdout results evaluate it without selecting the winner.</div>
- <button class="btn" id="runTest">Run historical model test</button> <button class="btn secondary" id="cancelTest" style="display:none">Cancel test</button><p class="muted smalltext">The test optimises on earlier matches, then compares current and recommended settings on later unseen fixtures. Recommendations are never applied automatically.</p><div id="outcomeCompare"></div><div id="confidenceCompare"></div><div id="testStatus" class="muted smalltext" style="margin:10px 0"></div><div id="testResults"></div>
+ <div class="notice"><strong>How to read the test:</strong> higher outcome accuracy is better; lower Brier score and log loss are better. Training automatically selects one precision-first recommendation using statistical confidence, chronological stability and worthwhile coverage. The later holdout can veto an update, but never selects another candidate.</div>
+ <button class="btn" id="runTest">Run historical model test</button> <button class="btn secondary" id="cancelTest" style="display:none">Cancel test</button><p class="muted smalltext">One automatic decision: apply the proposed settings only if unseen results pass the precision-first safeguard; otherwise keep your current settings. Nothing changes until you click Copy and Save.</p><div id="outcomeCompare"></div><div id="confidenceCompare"></div><div id="testStatus" class="muted smalltext" style="margin:10px 0"></div><div id="testResults"></div>
   <h3>Confidence Analysis</h3><div class="panel"><div class="controls"><div><label>Confidence</label><select id="analysisConfidence"><option value="all">All</option></select></div><div><label>Risk</label><select id="analysisRisk"><option value="all">All</option><option>low</option><option>medium</option><option>high</option></select></div><div><label>Outcome</label><select id="analysisOutcome"><option value="all">All</option><option>H</option><option>D</option><option>A</option></select></div><div><label>Window set</label><select id="analysisWindow"><option value="all">All</option><option value="0">15/10/5</option><option value="1">10/6/3</option><option value="2">8/5/3</option></select></div><div><label>Weighting</label><select id="analysisWeight"><option value="all">All</option><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select></div><div><label>League</label><select id="analysisLeague"><option value="all">All</option></select></div><div><label>Look back (days)</label><select id="analysisDays"><option value="0">All</option><option value="30">30</option><option value="90">90</option><option value="365">365</option></select></div></div><button class="btn secondary" id="analysisRefresh">Refresh analysis</button><div id="analysisResults"></div></div>
   <h3>Exact-score Performance</h3><div id="exactResults"></div>
   <h3>Models compared</h3><div class="tablewrap"><table><thead><tr><th>Model</th><th>Longest</th><th>Middle</th><th>Shortest</th></tr></thead><tbody>
@@ -1010,7 +1010,7 @@ async function runBacktest(all){
  }
  models.forEach(r=>{if(r.total){r.brier/=r.total;r.logLoss/=r.total;for(const id of Object.keys(r.byLeague))r.byLeague[id].brier/=r.byLeague[id].total}});
  const test={results:models,records,training,archive:all.length,completed:chron.length,eligible:eligible.length,testCount:eligible.length-start,trainCount:start};
- test.recommendation=await optimiseOutcome(test);test.confidenceRecommendation=await optimiseConfidence(test);return test;
+ test.recommendation=await optimiseOutcome(test);validateOutcomeRecommendation(test);test.confidenceRecommendation=await optimiseConfidence(test);return test;
 }
 function bestTestModel(test){if(!test)return null;return test.results.filter(r=>r.total>=state.minSample).sort((a,b)=>a.brier-b.brier)[0]||null}
 function outcomeMetrics(rows,homeGap,awayGap){
@@ -1027,34 +1027,39 @@ function selectionMetrics(m){
  return {picks:wins,hits,precision:wins?hits/wins:0,coverage:m.total?wins/m.total:0,
   lower:wilsonLower(hits,wins),home:m.by.H.n,away:m.by.A.n};
 }
-function chooseBalancedOutcome(candidates){
- // Only compare statistically meaningful candidates. Neither threshold endpoint receives a bonus.
- const viable=candidates.filter(c=>c.selection.home>=20&&c.selection.away>=20&&c.selection.picks>=80&&c.selection.coverage>=.15);
+function chooseIntelligentOutcome(candidates,groups){
+ // Precision-first selection: confidence-bound reliability is primary, coverage breaks
+ // near-ties. A fixed minimum opportunity floor prevents tiny-sample winners.
+ const viable=candidates.filter(c=>c.selection.home>=30&&c.selection.away>=30&&c.selection.picks>=120&&c.selection.coverage>=.30);
  if(!viable.length)return null;
- // Remove dominated candidates: another candidate must have at least as strong a conservative
- // precision estimate AND at least as much selection coverage.
- const sorted=viable.slice().sort((a,b)=>b.selection.coverage-a.selection.coverage||b.selection.lower-a.selection.lower);
- const frontier=[];let bestLower=-1;
- for(const c of sorted){if(c.selection.lower>bestLower+1e-10){frontier.push(c);bestLower=c.selection.lower}}
- // Knee of the precision/coverage frontier: normalise both axes and choose the point
- // with the largest perpendicular improvement over the straight line between extremes.
- const loP=Math.min(...frontier.map(c=>c.selection.lower)),hiP=Math.max(...frontier.map(c=>c.selection.lower));
- const loC=Math.min(...frontier.map(c=>c.selection.coverage)),hiC=Math.max(...frontier.map(c=>c.selection.coverage));
- const score=c=>{const x=(c.selection.coverage-loC)/Math.max(1e-9,hiC-loC),y=(c.selection.lower-loP)/Math.max(1e-9,hiP-loP);
-  return .7*y+.3*x};
- let chosen;
- if(frontier.length<3||hiP-loP<.005||hiC-loC<.05){
-  chosen=frontier.slice().sort((a,b)=>score(b)-score(a))[0];
- }else{
-  // On normalised axes, the endpoints are (1,0) and (0,1); maximise x+y-1.
-  // Tiny differences in noisy training data are resolved using conservative precision.
-  chosen=frontier.slice().sort((a,b)=>{
-   const knee=c=>((c.selection.coverage-loC)/(hiC-loC)+(c.selection.lower-loP)/(hiP-loP)-1);
-   return knee(b)-knee(a)||score(b)-score(a);
-  })[0];
+ const ordered=viable.slice().sort((a,b)=>b.selection.lower-a.selection.lower||b.selection.coverage-a.selection.coverage);
+ const bestLower=ordered[0].selection.lower;
+ // Only near-best conservative precision candidates compete for extra coverage.
+ const near=ordered.filter(c=>c.selection.lower>=bestLower-.012);
+ // Chronological stability on training only: evaluate the 180 strongest candidates
+ // plus high-coverage near-ties; never use holdout to rank configurations.
+ const shortlist=near.slice(0,180);
+ for(const c of near.slice().sort((a,b)=>b.selection.coverage-a.selection.coverage).slice(0,50))if(!shortlist.includes(c))shortlist.push(c);
+ for(const c of shortlist){
+  const rows=(groups.get(`${c.windowIndex}-${c.modelIndex}-${c.leagueInfluence}`)||{train:[]}).train;
+  const orderedRows=rows.slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const foldScores=[];
+  for(let i=0;i<3;i++){
+   const part=orderedRows.slice(Math.floor(i*orderedRows.length/3),Math.floor((i+1)*orderedRows.length/3));
+   const sm=selectionMetrics(outcomeMetrics(part,c.homeGap,c.awayGap));
+   if(sm.picks<25||sm.home<5||sm.away<5){foldScores.push(0);continue}
+   foldScores.push(sm.precision);
+  }
+  const mean=foldScores.reduce((a,b)=>a+b,0)/3;
+  const variation=Math.sqrt(foldScores.reduce((a,b)=>a+(b-mean)**2,0)/3);
+  c.stability=variation;
+  c.stableScore=c.selection.lower-0.30*variation;
  }
- chosen.frontierCount=frontier.length;chosen.viableCount=viable.length;
- chosen.selectionMethod='Conservative home/away precision–coverage frontier knee';
+ const topScore=Math.max(...shortlist.map(c=>c.stableScore));
+ const nearStable=shortlist.filter(c=>c.stableScore>=topScore-.006);
+ const chosen=nearStable.sort((a,b)=>b.selection.coverage-a.selection.coverage||b.stableScore-a.stableScore)[0];
+ chosen.viableCount=viable.length;chosen.shortlistCount=shortlist.length;
+ chosen.selectionMethod='Precision-first Wilson lower bound; chronological stability; coverage for near-ties';
  return chosen;
 }
 async function optimiseOutcome(test){
@@ -1070,10 +1075,27 @@ async function optimiseOutcome(test){
    testCheckpoint();testProgress("Optimising selection quality",done,total,84,92);await testYield();
   }
  }}
- const chosen=chooseBalancedOutcome(candidates);
+ const chosen=chooseIntelligentOutcome(candidates,groups);
  if(chosen){const hold=(groups.get(`${chosen.windowIndex}-${chosen.modelIndex}-${chosen.leagueInfluence}`)||{hold:[]}).hold;
   chosen.hold=outcomeMetrics(hold,chosen.homeGap,chosen.awayGap)}
  return chosen;
+}
+function validateOutcomeRecommendation(test){
+ const rec=test.recommendation;if(!rec)return;
+ const rows=test.records.filter(r=>r.key===`${rec.windowIndex}-${rec.modelIndex}-${rec.leagueInfluence}`);
+ const curRows=test.records.filter(r=>r.key===`${state.activeWindow}-${state.activeIndex}-${state.leagueInfluence}`);
+ const eligible=new Set(rows.map(r=>r.id)),current=curRows.filter(r=>eligible.has(r.id));
+ const common=new Set(current.map(r=>r.id)),proRows=rows.filter(r=>common.has(r.id));
+ const cur=selectionMetrics(outcomeMetrics(current,state.homeGap,state.awayGap));
+ const pro=selectionMetrics(outcomeMetrics(proRows,rec.homeGap,rec.awayGap));
+ rec.validation={current:cur,recommended:pro,holdoutCount:current.length};
+ // One-time acceptance gate only: never search for another candidate using holdout.
+ // A practical precision regression >0.5pp blocks the update; tiny precision
+ // differences require at least equivalent coverage and credible sample sizes.
+ rec.approved=current.length>=50&&pro.picks>=40&&pro.home>=15&&pro.away>=15&&
+  pro.precision>=cur.precision-.005&&
+  (pro.precision>cur.precision+.005||pro.coverage>=cur.coverage-.01);
+ rec.verdict=rec.approved?'apply':'keep';
 }
 function confidenceQuality(rows,cfg){const buckets=new Map();let count=0,concordant=0,discordant=0;for(const r of rows){const c=calibrationScore(r,cfg),b=buckets.get(c)||{n:0,hits:0};b.n++;if(r.prediction===r.actualOutcome)b.hits++;buckets.set(c,b)}const sorted=[...buckets].sort((a,b)=>a[0]-b[0]);for(let i=0;i<sorted.length;i++)for(let j=i+1;j<sorted.length;j++){const a=sorted[i][1],b=sorted[j][1];if(a.n<5||b.n<5)continue;const pair=a.n*b.n,delta=b.hits/b.n-a.hits/a.n;if(delta>0)concordant+=pair*delta;else discordant+=pair*(-delta)}const covered=sorted.filter(x=>x[1].n>=5).length;const quality=(concordant-discordant)/Math.max(1,rows.length*rows.length)+Math.min(covered,6)*.002;return{quality,buckets:sorted,covered}}
 async function optimiseConfidence(test){
@@ -1097,13 +1119,13 @@ function testRate(n,d){return `${testPct(n,d)} (${n}/${d})`}
 function metricSummary(m){return `${testPct(m.correct,m.total)} (${m.correct}/${m.total}) · Home ${testPct(m.by.H.hits,m.by.H.n)} (${m.by.H.n}) · Draw ${testPct(m.by.D.hits,m.by.D.n)} (${m.by.D.n}) · Away ${testPct(m.by.A.hits,m.by.A.n)} (${m.by.A.n})`}
 function confidenceSummary(rows,cfg){const m=confidenceQuality(rows,cfg);return m.buckets.map(([c,b])=>`${c}/10: ${testRate(b.hits,b.n)}`).join(" · ")||"No eligible matches"}
 function renderRecommendations(test){const rec=test.recommendation,conf=test.confidenceRecommendation,curModel=MODELS[state.activeIndex],curWin=WINDOW_SETS[state.activeWindow];const head=`<tr><th>Setting</th><th>Current (Settings)</th><th>Recommended (Test)</th></tr>`;
- if(rec){const rows=test.records.filter(r=>r.key===`${rec.windowIndex}-${rec.modelIndex}-${rec.leagueInfluence}`),currentRows=test.records.filter(r=>r.key===`${state.activeWindow}-${state.activeIndex}-${state.leagueInfluence}`),common=new Set(rows.map(r=>r.id)),current=currentRows.filter(r=>common.has(r.id)),recommended=rows.filter(r=>new Set(current.map(x=>x.id)).has(r.id)),cur=outcomeMetrics(current,state.homeGap,state.awayGap),pro=outcomeMetrics(recommended,rec.homeGap,rec.awayGap);$("outcomeCompare").innerHTML=`<div class="panel"><h3>Outcome Prediction · Current vs Recommended</h3><div class="tablewrap"><table><thead>${head}</thead><tbody><tr><td>League influence</td><td>${state.leagueInfluence}%</td><td><strong>${rec.leagueInfluence}%</strong></td></tr><tr><td>Form windows</td><td>${curWin.join(" / ")}</td><td><strong>${WINDOW_SETS[rec.windowIndex].join(" / ")}</strong></td></tr><tr><td>Form weighting</td><td>${curModel.short} — ${curModel.weights.join(" / ")}</td><td><strong>${MODELS[rec.modelIndex].short} — ${MODELS[rec.modelIndex].weights.join(" / ")}</strong></td></tr><tr><td>Home-win xG gap</td><td>${state.homeGap.toFixed(2)}</td><td><strong>${rec.homeGap.toFixed(2)}</strong></td></tr><tr><td>Away-win xG gap</td><td>${state.awayGap.toFixed(2)}</td><td><strong>${rec.awayGap.toFixed(2)}</strong></td></tr><tr><td><strong>Home/Away selection precision (primary)</strong></td><td><strong>${testRate(cur.by.H.hits+cur.by.A.hits,cur.by.H.n+cur.by.A.n)}</strong></td><td><strong>${testRate(pro.by.H.hits+pro.by.A.hits,pro.by.H.n+pro.by.A.n)}</strong></td></tr><tr><td>Home/Away selection coverage</td><td>${testRate(cur.by.H.n+cur.by.A.n,cur.total)}</td><td>${testRate(pro.by.H.n+pro.by.A.n,pro.total)}</td></tr><tr><td>Incorrect Home/Away selections</td><td>${cur.by.H.n+cur.by.A.n-cur.by.H.hits-cur.by.A.hits}</td><td>${pro.by.H.n+pro.by.A.n-pro.by.H.hits-pro.by.A.hits}</td></tr><tr><td>Holdout outcome accuracy (all picks)</td><td>${testRate(cur.correct,cur.total)}</td><td>${testRate(pro.correct,pro.total)}</td></tr><tr><td>Home-win precision</td><td>${testRate(cur.by.H.hits,cur.by.H.n)}</td><td>${testRate(pro.by.H.hits,pro.by.H.n)}</td></tr><tr><td>Draw precision</td><td>${testRate(cur.by.D.hits,cur.by.D.n)}</td><td>${testRate(pro.by.D.hits,pro.by.D.n)}</td></tr><tr><td>Away-win precision</td><td>${testRate(cur.by.A.hits,cur.by.A.n)}</td><td>${testRate(pro.by.A.hits,pro.by.A.n)}</td></tr></tbody></table></div><p class="muted smalltext">Selected on ${rec.train.total} earlier matches; compared on ${cur.total} common unseen holdout matches. Threshold search: 0.05–0.75 in 0.05 increments (15 home × 15 away thresholds × 21 league-influence values across 12 window/weight combinations (56,700 candidates)). Holdout is evaluation only, not selection. Each result shows percentage (correct picks / total picks). Recommendation is selected on training data using the knee of the conservative home/away precision–coverage frontier, not overall accuracy or maximum precision alone. Candidates need at least 80 home/away selections, at least 20 of each type, and 15% coverage in training. ${rec.viableCount} candidates passed these safeguards; ${rec.frontierCount} were non-dominated. Holdout results above are unseen validation, not a guarantee of betting profitability. Compare the home and away sample counts before applying.</p><button class="btn secondary" onclick="copyOutcomeRecommendation()">Copy recommendation into Settings (not saved)</button></div>`;
+ if(rec){const verdict=rec.approved?`<div class="notice" style="border-left:4px solid #2b9c68"><strong>✅ Recommended Update</strong> — The training-selected configuration passed the unseen holdout safeguard. Copy and Save to activate.</div>`:`<div class="notice" style="border-left:4px solid #db8d35"><strong>⚠️ Keep Current Settings</strong> — The proposed configuration did not demonstrate an acceptable precision/coverage trade-off on unseen matches. Your current settings remain preferable; no update is recommended.</div>`;const rows=test.records.filter(r=>r.key===`${rec.windowIndex}-${rec.modelIndex}-${rec.leagueInfluence}`),currentRows=test.records.filter(r=>r.key===`${state.activeWindow}-${state.activeIndex}-${state.leagueInfluence}`),common=new Set(rows.map(r=>r.id)),current=currentRows.filter(r=>common.has(r.id)),recommended=rows.filter(r=>new Set(current.map(x=>x.id)).has(r.id)),cur=outcomeMetrics(current,state.homeGap,state.awayGap),pro=outcomeMetrics(recommended,rec.homeGap,rec.awayGap);$("outcomeCompare").innerHTML=`<div class="panel">${verdict}<h3>Outcome Prediction · Current vs Recommended</h3><div class="tablewrap"><table><thead>${head}</thead><tbody><tr><td>League influence</td><td>${state.leagueInfluence}%</td><td><strong>${rec.leagueInfluence}%</strong></td></tr><tr><td>Form windows</td><td>${curWin.join(" / ")}</td><td><strong>${WINDOW_SETS[rec.windowIndex].join(" / ")}</strong></td></tr><tr><td>Form weighting</td><td>${curModel.short} — ${curModel.weights.join(" / ")}</td><td><strong>${MODELS[rec.modelIndex].short} — ${MODELS[rec.modelIndex].weights.join(" / ")}</strong></td></tr><tr><td>Home-win xG gap</td><td>${state.homeGap.toFixed(2)}</td><td><strong>${rec.homeGap.toFixed(2)}</strong></td></tr><tr><td>Away-win xG gap</td><td>${state.awayGap.toFixed(2)}</td><td><strong>${rec.awayGap.toFixed(2)}</strong></td></tr><tr><td><strong>Home/Away selection precision (primary)</strong></td><td><strong>${testRate(cur.by.H.hits+cur.by.A.hits,cur.by.H.n+cur.by.A.n)}</strong></td><td><strong>${testRate(pro.by.H.hits+pro.by.A.hits,pro.by.H.n+pro.by.A.n)}</strong></td></tr><tr><td>Home/Away selection coverage</td><td>${testRate(cur.by.H.n+cur.by.A.n,cur.total)}</td><td>${testRate(pro.by.H.n+pro.by.A.n,pro.total)}</td></tr><tr><td>Incorrect Home/Away selections</td><td>${cur.by.H.n+cur.by.A.n-cur.by.H.hits-cur.by.A.hits}</td><td>${pro.by.H.n+pro.by.A.n-pro.by.H.hits-pro.by.A.hits}</td></tr><tr><td>Holdout outcome accuracy (all picks)</td><td>${testRate(cur.correct,cur.total)}</td><td>${testRate(pro.correct,pro.total)}</td></tr><tr><td>Home-win precision</td><td>${testRate(cur.by.H.hits,cur.by.H.n)}</td><td>${testRate(pro.by.H.hits,pro.by.H.n)}</td></tr><tr><td>Draw precision</td><td>${testRate(cur.by.D.hits,cur.by.D.n)}</td><td>${testRate(pro.by.D.hits,pro.by.D.n)}</td></tr><tr><td>Away-win precision</td><td>${testRate(cur.by.A.hits,cur.by.A.n)}</td><td>${testRate(pro.by.A.hits,pro.by.A.n)}</td></tr></tbody></table></div><p class="muted smalltext">Selected on ${rec.train.total} earlier matches; compared on ${cur.total} common unseen holdout matches. Threshold search: 0.05–0.75 in 0.05 increments (15 home × 15 away thresholds × 21 league-influence values across 12 window/weight combinations (56,700 candidates)). Holdout is evaluation only, not selection. Each result shows percentage (correct picks / total picks). The one proposed configuration is chosen on training data using conservative home/away precision, a three-period chronological stability check, and coverage only for close competitors. Training safeguards require at least 120 winner selections, 30 of each type and 30% coverage. ${rec.viableCount} candidates passed; ${rec.shortlistCount} underwent stability checking. The unseen holdout only accepts or vetoes this proposal (no re-selection). A precision drop exceeding 0.5 percentage points triggers Keep Current Settings. This is a practical safeguard, not a statistical guarantee or evidence of betting profitability.</p>${rec.approved?`<button class="btn secondary" onclick="copyOutcomeRecommendation()">Copy recommended update into Settings (not saved)</button>`:`<p class="muted smalltext">Copy disabled: holdout validation did not support changing your settings.</p>`}</div>`;
  }else $("outcomeCompare").innerHTML=`<div class="notice">Not enough common eligible training/holdout fixtures for an outcome recommendation at the selected minimum sample.</div>`;
  if(conf){const c=state.confidenceConfig,p=conf.config.points,cp=c.points,rows=test.records.filter(r=>r.key===`${rec.windowIndex}-${rec.modelIndex}-${rec.leagueInfluence}`).map(r=>withThresholdPrediction(r,rec));$("confidenceCompare").innerHTML=`<div class="panel"><h3>Confidence · Current vs Recommended</h3><div class="tablewrap"><table><thead>${head}</thead><tbody>${[["Probability separation",cp[0],p[0]],["Goal-gap / draw balance",cp[1],p[1]],["Historical coverage",cp[2],p[2]],["Supporting evidence",cp[3],p[3]],["Total points",10,10],["Medium-risk deduction",c.mediumPenalty,conf.config.mediumPenalty],["High-risk deduction",c.highPenalty,conf.config.highPenalty]].map(x=>`<tr><td>${x[0]}</td><td>${x[1]}</td><td><strong>${x[2]}</strong></td></tr>`).join("")}</tbody></table></div><p><strong>Current confidence hit rates:</strong> ${confidenceSummary(rows,c)}</p><p><strong>Recommended confidence hit rates:</strong> ${confidenceSummary(rows,conf.config)}</p><p class="muted smalltext">Confidence weights selected on earlier matches, tested on ${conf.sample} later matches. Higher ratings should have higher hit rates; small buckets are not reliable. This changes ratings only, never outcomes. Confidence is not a literal probability.</p><button class="btn secondary" onclick="copyConfidenceRecommendation()">Copy confidence recommendation into Settings (not saved)</button></div>`;}else $("confidenceCompare").innerHTML=`<div class="notice">Not enough historical data for confidence optimisation.</div>`;
- $("settingsOutcomeRecommendation").innerHTML=rec?`Latest test recommendation: ${WINDOW_SETS[rec.windowIndex].join("/")} · ${MODELS[rec.modelIndex].short} · League ${rec.leagueInfluence}% · Home ${rec.homeGap.toFixed(2)} · Away ${rec.awayGap.toFixed(2)}. <button class="btn small secondary" onclick="copyOutcomeRecommendation()">Copy into fields</button>`:"No validated recommendation yet.";
+ $("settingsOutcomeRecommendation").innerHTML=rec&&rec.approved?`Validated update: ${WINDOW_SETS[rec.windowIndex].join("/")} · ${MODELS[rec.modelIndex].short} · League ${rec.leagueInfluence}% · Home ${rec.homeGap.toFixed(2)} · Away ${rec.awayGap.toFixed(2)}. <button class="btn small secondary" onclick="copyOutcomeRecommendation()">Copy into fields</button>`:(rec?"Keep current settings: latest proposed update did not pass unseen validation.":"No validated recommendation yet.");
  $("settingsConfidenceRecommendation").innerHTML=conf?`Latest confidence recommendation: ${conf.config.points.join(" / ")} points; risk deductions ${conf.config.mediumPenalty} / ${conf.config.highPenalty}. <button class="btn small secondary" onclick="copyConfidenceRecommendation()">Copy into fields</button>`:"No validated confidence recommendation yet.";
 }
-function copyOutcomeRecommendation(){const r=state.lastTest?.recommendation;if(!r)return;$("modeManual").checked=true;$("modelChoice").value=r.modelIndex;$("windowChoice").value=r.windowIndex;$("homeGapChoice").value=r.homeGap.toFixed(2);$("awayGapChoice").value=r.awayGap.toFixed(2);$("leagueInfluenceChoice").value=String(r.leagueInfluence);$("settingsStatus").textContent="Recommended outcome settings copied. Click Save settings to activate."}
+function copyOutcomeRecommendation(){const r=state.lastTest?.recommendation;if(!r||!r.approved)return;$("modeManual").checked=true;$("modelChoice").value=r.modelIndex;$("windowChoice").value=r.windowIndex;$("homeGapChoice").value=r.homeGap.toFixed(2);$("awayGapChoice").value=r.awayGap.toFixed(2);$("leagueInfluenceChoice").value=String(r.leagueInfluence);$("settingsStatus").textContent="Recommended outcome settings copied. Click Save settings to activate."}
 function copyConfidenceRecommendation(){const r=state.lastTest?.confidenceRecommendation;if(!r)return;for(const [id,v] of [["confProb",r.config.points[0]],["confGoal",r.config.points[1]],["confHist",r.config.points[2]],["confSupport",r.config.points[3]],["confMedium",r.config.mediumPenalty],["confHigh",r.config.highPenalty]])$(id).value=v;$("settingsStatus").textContent="Recommended confidence settings copied. Click Save settings to activate."}
 function renderTest(test){if(!test||!test.records.length){$("testResults").innerHTML=`<div class="notice error">Insufficient same-league historical matches for an eligible holdout sample.</div>`;return}renderRecommendations(test);const ranked=test.results.filter(r=>r.total).sort((a,b)=>a.brier-b.brier),best=bestTestModel(test);$("testResults").innerHTML=`<div class="panel"><h3>Underlying probability models</h3><p class="muted smalltext">Brier rankings are diagnostic. Outcome threshold optimisation above uses chronological training and unseen holdout; Auto's legacy window/weight selection still uses Brier. ${best?`Lowest eligible Brier: ${esc(best.name)} (${best.brier.toFixed(4)}).`:"No eligible Brier winner."}</p></div><div class="tablewrap panel"><table><thead><tr><th>Window / weights</th><th>Holdout matches</th><th>Accuracy</th><th>Brier ↓</th><th>Log loss ↓</th><th>H/D/A correct</th></tr></thead><tbody>${ranked.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.total}</td><td>${testRate(r.correct,r.total)}</td><td>${r.brier.toFixed(4)}</td><td>${r.logLoss.toFixed(4)}</td><td>${r.classCorrect.H}/${r.actual.H} · ${r.classCorrect.D}/${r.actual.D} · ${r.classCorrect.A}/${r.actual.A}</td></tr>`).join("")}</tbody></table></div>`;renderAnalysis()}
 function scoreParts(value){const m=String(value||"").match(/(\d+)\D+(\d+)/);return m?[+m[1],+m[2]]:null}
