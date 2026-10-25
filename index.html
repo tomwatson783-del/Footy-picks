@@ -23,6 +23,12 @@ main{max-width:820px;margin:auto;padding:13px 12px 95px}
 nav{display:flex;gap:6px;overflow-x:auto;margin:0 0 15px;padding-bottom:3px}
 nav button{flex:0 0 auto;border:1px solid var(--border);background:var(--panel);color:var(--muted);padding:10px 12px;border-radius:12px;font-weight:700}
 nav button.active{background:var(--green);color:#10251d;border-color:var(--green)}
+/* Keep Weekly Top 6 picks visually separated from its summary dashboard. */
+#weeklyList{margin-top:20px}
+#weeklySummary{margin-top:10px}
+.previous-action-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:9px;margin-bottom:12px}
+.previous-action-row .btn{width:100%;min-height:44px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.25}
+@media(max-width:420px){.previous-action-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.previous-action-row .btn{padding:9px 7px;font-size:12px}}
 button,select,input{font:inherit}
 button{cursor:pointer}
 button:disabled{opacity:.6;cursor:default}
@@ -262,9 +268,9 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 <main>
 <nav id="tabs" aria-label="Main navigation">
  <button class="active" data-tab="fixtures">Fixtures</button>
- <button data-tab="weekly">Weekly Top 6</button>
  <button data-tab="live">Live Centre <span id="liveTabCount"></span></button>
  <button data-tab="accumulator">Accumulator <span id="accCount"></span></button>
+ <button data-tab="weekly">Weekly Top 6</button>
  <button data-tab="previous">Previous Results</button>
  <button data-tab="test">Model Test</button>
  <button data-tab="settings">Settings</button>
@@ -342,7 +348,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 
 <section id="previous" hidden>
  <h2>Previous Predictions &amp; Results</h2><p class="muted">Saved predictions are compared with completed scores. Only predictions recorded before kick-off are assessed.</p>
- <div class="row wrap" style="margin-bottom:12px"><button class="btn secondary" id="refreshHistory">Refresh scores &amp; results</button><button class="btn danger" id="clearPredictionHistory">Reset saved prediction history</button></div><p class="muted smalltext">Reset clears saved pre-match predictions and their accuracy/risk summaries in this browser. It does not delete completed match data or the separate Live Centre tracking history.</p>
+ <div class="previous-action-row"><button class="btn secondary" id="refreshHistory">Refresh scores &amp; results</button><button class="btn danger" id="clearPredictionHistory">Reset saved prediction history</button></div><p class="muted smalltext">Reset clears saved pre-match predictions and their accuracy/risk summaries in this browser. It does not delete completed match data or the separate Live Centre tracking history.</p>
  <div class="controls">
   <div><label for="historyDays">Look back</label><select id="historyDays"><option value="7">Last 7 days</option><option value="14" selected>Last 14 days</option></select></div>
   <div><label for="historyLeague">Competition</label><select id="historyLeague" data-default="all"></select></div>
@@ -677,18 +683,34 @@ function calculatePrediction(m,previous,model){
  const predictedScore=consistentPredictedScore(hl,al,prediction);
  const sorted=Object.values(probs).sort((x,y)=>y-x),coverage=clamp(Math.min(h.count,a.count)/10,0,1);
  const probabilityGap=sorted[0]-sorted[1];
- const differenceStrength=clamp(Math.abs(xgDifference)/1.5,0,1);
+ const goalGap=Math.abs(xgDifference),isDraw=prediction==="D";
+ // A larger gap supports a win pick; a smaller gap supports a draw pick.
+ const differenceStrength=isDraw?clamp(1-goalGap/1.5,0,1):clamp(goalGap/1.5,0,1);
  const supportBonus=Math.min(1,risk.supportScore*.5);
- const rawConfidence=clamp(Math.round(3+probabilityGap*10+differenceStrength*2+coverage*2+supportBonus),1,9);
- const minTeamSample=Math.min(h.count,a.count),drawThresholdApplied=Math.abs(xgDifference)<.5;
- const confidenceLimit=drawThresholdApplied?6:9,riskPenalty=risk.level==="high"?2:risk.level==="medium"?1:0;
- const sampleCap=minTeamSample<5?6:9;
- const confidence=Math.max(1,Math.min(rawConfidence-riskPenalty,sampleCap,confidenceLimit));
+ const basePoints=3,probabilityContribution=probabilityGap*10,goalContribution=differenceStrength*2,historyContribution=coverage*2;
+ const rawScore=clamp(basePoints+probabilityContribution+goalContribution+historyContribution+supportBonus,1,10);
+ const minTeamSample=Math.min(h.count,a.count),riskPenalty=risk.level==="high"?2:risk.level==="medium"?1:0;
+ const adjustedScore=clamp(rawScore-riskPenalty,1,10),roundedScore=Math.round(adjustedScore);
+ // Short histories limit confidence; larger ratings require reliable samples.
+ const sampleCap=minTeamSample<5?6:minTeamSample<8?8:10;
+ // High win ratings require evidence as well as a large goal gap.
+ const strongWinEvidence=sorted[0]>=.55&&supportBonus>=.5&&risk.level==="low"&&minTeamSample>=5;
+ const exceptionalWinEvidence=strongWinEvidence&&sorted[0]>=.65&&probabilityGap>=.20&&supportBonus>=1&&minTeamSample>=8&&adjustedScore>=9.5;
+ let confidenceLimit=10,eligibilityReason="No goal-gap ceiling applies to draws; draw confidence uses probability, goal balance, evidence, sample size and risk.";
+ if(!isDraw){
+  if(goalGap<1){confidenceLimit=7;eligibilityReason="The expected-goals gap is below 1.00, so win confidence is limited to 7/10."}
+  else if(goalGap<2){confidenceLimit=8;eligibilityReason="The expected-goals gap is at least 1.00 but below 2.00, so win confidence is limited to 8/10."}
+  else if(!strongWinEvidence){confidenceLimit=8;eligibilityReason="The 2.00-goal threshold is met, but probability, supporting evidence, risk or sample requirements for 9/10 are not all met."}
+  else if(!exceptionalWinEvidence){confidenceLimit=9;eligibilityReason="The 9/10 criteria are met, but the additional exceptional-evidence criteria for 10/10 are not all met."}
+  else eligibilityReason="The 2.00-goal threshold and exceptional-evidence checks are met; 10/10 remains subject to the final rounded score and sample limit.";
+ }
+ const confidence=Math.max(1,Math.min(roundedScore,sampleCap,confidenceLimit));
+ const drawThresholdApplied=false;
  const expectedGoalBreakdown={
   home:{leagueBaseline:leagueHome,attackRatio:homeAttack,opponentDefenceRatio:awayDefence,homeAdvantage:1.04,venueAttack:homeVenue.attack,opponentVenueConceded:awayVenue.conceded,uncapped:leagueHome*homeAttack*awayDefence*1.04*homeVenue.attack*awayVenue.conceded,final:hl,venueMatches:homeVenue.count},
   away:{leagueBaseline:leagueAway,attackRatio:awayAttack,opponentDefenceRatio:homeDefence,homeAdvantage:1,venueAttack:awayVenue.attack,opponentVenueConceded:homeDefVenue.conceded,uncapped:leagueAway*awayAttack*homeDefence*awayVenue.attack*homeDefVenue.conceded,final:al,venueMatches:awayVenue.count}
  };
- const confidenceBreakdown={topProbability:sorted[0],secondProbability:sorted[1],probabilityGap,goalGap:Math.abs(xgDifference),differenceStrength,coverage,supportBonus,rawConfidence,riskLevel:risk.level,riskPenalty,minTeamSample,sampleCap,drawThresholdApplied,confidenceLimit,final:confidence};
+ const confidenceBreakdown={topProbability:sorted[0],secondProbability:sorted[1],probabilityGap,goalGap,differenceStrength,coverage,supportBonus,basePoints,probabilityContribution,goalContribution,historyContribution,rawScore,adjustedScore,roundedScore,rawConfidence:roundedScore,riskLevel:risk.level,riskPenalty,minTeamSample,sampleCap,drawThresholdApplied,confidenceLimit,strongWinEvidence,exceptionalWinEvidence,eligibilityReason,final:confidence};
  return{probs,prediction,confidence,confidenceSample:minTeamSample,h,a,homeLambda:hl,awayLambda:al,xgDifference,drawThresholdApplied,homeVenueMatches:homeVenue.count,awayVenueMatches:awayVenue.count,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore,leagueAverage:la.all,leagueHome,leagueAway,homeAttack,awayAttack,homeDefence,awayDefence,homeVenue,awayVenue,expectedGoalBreakdown,confidenceBreakdown,risk};
 }
 function updatePredictions(matches,index=state.activeIndex){
@@ -784,7 +806,27 @@ function expectedGoalAuditHtml(m){
 }
 function confidenceAuditHtml(m){
  const c=m.confidenceBreakdown||{};
- return `<div class="analytics-card full"><h4>Confidence — calculation</h4><p class="analytics-note">Confidence is a heuristic rating, not a calibrated probability of being correct.</p><div class="form-summary">Top outcome probability: <strong>${(c.topProbability*100).toFixed(1)}%</strong></div><div class="form-summary">Second-highest outcome probability: <strong>${(c.secondProbability*100).toFixed(1)}%</strong></div><div class="form-summary">Probability gap contribution: <strong>${(c.probabilityGap*100).toFixed(1)} percentage points</strong> (gap × 10 in the raw score)</div><div class="form-summary">Expected-goal gap: <strong>${Number(c.goalGap).toFixed(2)}</strong> · gap strength <strong>${Number(c.differenceStrength).toFixed(2)}</strong> (up to +2 points)</div><div class="form-summary">History coverage: <strong>${Math.round(c.coverage*100)}%</strong> (up to +2 points; based on the smaller team sample, capped at 10 matches)</div><div class="form-summary">Raw confidence: <strong>${c.rawConfidence}/9</strong> (starts at 3)</div><div class="form-summary">Supporting-evidence bonus: <strong>+${Number(c.supportBonus||0).toFixed(1)}</strong> (capped at +1 raw point)<br>Contradictory-form risk adjustment: <strong>−${c.riskPenalty}</strong> (${esc(c.riskLevel)} risk)</div><div class="form-summary">Smallest team history: <strong>${c.minTeamSample} matches</strong> · sample cap <strong>${c.sampleCap}/10</strong></div><div class="form-summary">Draw-pick cap applied: <strong>${c.drawThresholdApplied?"Yes (maximum 6/10)":"No"}</strong></div><div class="row between" style="margin-top:10px"><strong>Final confidence</strong><strong>${c.final}/10</strong></div></div>`;
+ const n=v=>Number.isFinite(Number(v))?Number(v):0;
+ const pct=v=>`${(n(v)*100).toFixed(1)}%`;
+ const points=v=>`${n(v).toFixed(2)} points`;
+ const isDraw=m.prediction==="D";
+ const goalLabel=isDraw?"Goal-balance signal":"Expected-goals advantage";
+ const goalExplain=isDraw
+  ?"For a draw, a smaller difference between the teams' expected goals earns more points."
+  :"For a win, a larger expected-goals gap in favour of the predicted winner earns more points.";
+ return `<div class="analytics-card full"><h4>Confidence — how the rating was earned</h4>
+ <p class="analytics-note">This is the model's confidence score, not a guarantee or a calibrated probability of being correct. Each line shows the actual contribution used by the calculation.</p>
+ <div class="form-summary"><strong>1. Starting points:</strong> ${points(c.basePoints)} (the model starts from 3 points)</div>
+ <div class="form-summary"><strong>2. Outcome probability:</strong> ${pct(c.topProbability)} top outcome vs ${pct(c.secondProbability)} second-highest outcome; probability separation ${n(c.probabilityGap*100).toFixed(1)} percentage points contributes <strong>+${points(c.probabilityContribution)}</strong>.</div>
+ <div class="form-summary"><strong>3. ${goalLabel}:</strong> expected goals ${n(m.homeLambda).toFixed(2)}–${n(m.awayLambda).toFixed(2)}, absolute difference ${n(c.goalGap).toFixed(2)}. ${goalExplain} Contribution: <strong>+${points(c.goalContribution)}</strong> (up to 2 points).</div>
+ <div class="form-summary"><strong>4. Historical data:</strong> the smaller team sample is ${n(c.minTeamSample).toFixed(0)} matches, giving ${Math.round(n(c.coverage)*100)}% coverage and <strong>+${points(c.historyContribution)}</strong> (up to 2 points).</div>
+ <div class="form-summary"><strong>5. Supporting evidence:</strong> <strong>+${points(c.supportBonus)}</strong> (up to 1 point from the existing supporting signals).</div>
+ <div class="form-summary"><strong>Raw score:</strong> ${points(c.rawScore)} = starting points + probability + goal signal + history + supporting evidence.</div>
+ <div class="form-summary"><strong>Risk adjustment:</strong> −${points(c.riskPenalty)} (${esc(c.riskLevel||"unknown")} contradictory-form risk).</div>
+ <div class="form-summary"><strong>Adjusted score:</strong> ${points(c.adjustedScore)}. Rounded to the nearest whole number: <strong>${n(c.roundedScore).toFixed(0)}/10</strong>.</div>
+ <div class="form-summary"><strong>Eligibility/sample limits:</strong> maximum ${n(c.confidenceLimit).toFixed(0)}/10 from the verdict-specific rules and ${n(c.sampleCap).toFixed(0)}/10 from sample size. ${esc(c.eligibilityReason||"The final rating is limited by the score, sample size and eligibility rules.")}</div>
+ <div class="row between" style="margin-top:10px"><strong>Final confidence</strong><strong>${n(c.final).toFixed(0)}/10</strong></div>
+ </div>`;
 }
 function insidePredictionHtml(m){
  return`<div class="inside-prediction"><h3 class="inside-title">Inside the Prediction</h3><p class="inside-subtitle">A visual breakdown of the indicators behind this fixture's forecast.</p><div class="analytics-grid">
@@ -1429,6 +1471,10 @@ function weeklyKickoff(m){
 function weeklyWeekLabel(date){
  return new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/London",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date(date));
 }
+function weeklyWeekKey(date){
+ const p=ukParts(date);
+ return `${p.year}-${p.month}-${p.day}`;
+}
 function renderWeeklyTop6(){
  const status=$("weeklyStatus"),root=$("weeklyList");if(!root)return;
  const now=Date.now(),candidates=state.matches.filter(m=>weeklyKickoff(m)&&new Date(m.date).getTime()>now-2*3600000&&m.probs&&m.prediction!=="D");
@@ -1440,22 +1486,53 @@ function renderWeeklyTop6(){
   return{m,pick,risk,rank};
  }).filter(x=>x.pick>=.42&&Number(x.m.confidence||0)>=5).sort((a,b)=>b.rank-a.rank).slice(0,6);
  // Save a one-time pre-kickoff snapshot for each weekly pick. Existing snapshots are never overwritten.
- for(const {m} of rows){
+ for(const [position,{m}] of rows.entries()){
   const id=eventId(m),old=state.weeklyPicks.find(x=>x.id===id);
   if(!old&&new Date(m.date).getTime()>now){
-   state.weeklyPicks.push({id,leagueId:m.leagueId,league:m.league,home:m.home,away:m.away,date:m.date,prediction:m.prediction,confidence:m.confidence,probs:{...m.probs},predictedScore:m.predictedScore,homeLambda:m.homeLambda,awayLambda:m.awayLambda,expectedGoalBreakdown:m.expectedGoalBreakdown,riskLevel:m.risk?.level||"low",riskFlags:(m.risk?.flags||[]).map(f=>f.text),supportFlags:(m.risk?.supportFlags||[]).map(f=>f.text),modelIndex:state.activeIndex,savedAt:new Date().toISOString()});
+   state.weeklyPicks.push({id,weekKey:weeklyWeekKey(m.date),pickPosition:position+1,leagueId:m.leagueId,league:m.league,home:m.home,away:m.away,date:m.date,prediction:m.prediction,confidence:m.confidence,confidenceBreakdown:m.confidenceBreakdown,probs:{...m.probs},predictedScore:m.predictedScore,homeLambda:m.homeLambda,awayLambda:m.awayLambda,expectedGoalBreakdown:m.expectedGoalBreakdown,riskLevel:m.risk?.level||"low",riskFlags:(m.risk?.flags||[]).map(f=>f.text),supportFlags:(m.risk?.supportFlags||[]).map(f=>f.text),modelIndex:state.activeIndex,savedAt:new Date().toISOString()});
   }
  }
  const currentById=new Map(state.matches.map(m=>[eventId(m),m]));
  for(const pick of state.weeklyPicks){const m=currentById.get(pick.id);if(m&&isFinished(m)){pick.actualScore=`${m.homeScore}–${m.awayScore}`;pick.actualOutcome=getOutcome(m.homeScore,m.awayScore)}}
  state.weeklyPicks=state.weeklyPicks.slice(-250);store("fp_weekly_top6",state.weeklyPicks);
  const shown=rows.length;
+ // Backfill metadata for saved picks created by earlier versions, without changing their predictions.
+ for(const pick of state.weeklyPicks)pick.weekKey=pick.weekKey||weeklyWeekKey(pick.date);
+ const positionGroups=new Map();
+ for(const pick of state.weeklyPicks){
+  if(!positionGroups.has(pick.weekKey))positionGroups.set(pick.weekKey,[]);
+  positionGroups.get(pick.weekKey).push(pick);
+ }
+ for(const group of positionGroups.values()){
+  group.sort((a,b)=>new Date(a.savedAt||a.date)-new Date(b.savedAt||b.date));
+  group.forEach((pick,i)=>{if(!Number.isFinite(Number(pick.pickPosition))||Number(pick.pickPosition)<1)pick.pickPosition=i+1;});
+ }
  status.textContent=state.matches.length?`${shown} credible pick${shown===1?"":"s"} found${rows[0]?` · Saturday ${weeklyWeekLabel(rows[0].m.date)}`:""}.`:"Load fixtures to calculate the weekly selections.";
- $("weeklySummary").innerHTML=`<div class="statgrid"><div class="stat"><span class="muted smalltext">Credible selections</span><strong>${shown}/6</strong></div><div class="stat"><span class="muted smalltext">Saved weekly picks</span><strong>${state.weeklyPicks.length}</strong></div><div class="stat"><span class="muted smalltext">Tracked results</span><strong>${state.weeklyPicks.filter(x=>x.actualOutcome).length}</strong></div><div class="stat"><span class="muted smalltext">Correct outcomes</span><strong>${state.weeklyPicks.filter(x=>x.actualOutcome===x.prediction).length}</strong></div></div>`;
+ const settledPicks=state.weeklyPicks.filter(x=>x.actualOutcome==="H"||x.actualOutcome==="D"||x.actualOutcome==="A");
+ const correctPicks=settledPicks.filter(x=>x.actualOutcome===x.prediction);
+ const weeklyGroups=[...positionGroups.entries()].map(([key,picks])=>({key,picks}));
+ const fullSixWeeks=weeklyGroups.filter(g=>g.picks.length===6);
+ const fullySettledSix=fullSixWeeks.filter(g=>g.picks.every(x=>x.actualOutcome==="H"||x.actualOutcome==="D"||x.actualOutcome==="A"));
+ const perfectWeeks=fullySettledSix.filter(g=>g.picks.every(x=>x.actualOutcome===x.prediction)).length;
+ const hitRate=settledPicks.length?(correctPicks.length/settledPicks.length*100).toFixed(1)+"%":"—";
+ const accaRate=fullySettledSix.length?(perfectWeeks/fullySettledSix.length*100).toFixed(1)+"%":"—";
+ $("weeklySummary").innerHTML=`<div class="statgrid">
+ <div class="stat"><span class="muted smalltext">Overall pick hit rate</span><strong>${hitRate}</strong><span class="muted smalltext">${correctPicks.length}/${settledPicks.length} settled picks correct</span></div>
+ <div class="stat"><span class="muted smalltext">All-six acca success</span><strong>${accaRate}</strong><span class="muted smalltext">${perfectWeeks}/${fullySettledSix.length} fully settled six-pick weeks won</span></div>
+ <div class="stat"><span class="muted smalltext">Perfect weeks</span><strong>${perfectWeeks} / ${fullySettledSix.length}</strong><span class="muted smalltext">All six selections correct</span></div>
+ <div class="stat"><span class="muted smalltext">Correct picks</span><strong>${correctPicks.length} / ${settledPicks.length}</strong><span class="muted smalltext">Settled selections only</span></div>
+ </div><p class="muted smalltext" style="margin:8px 2px 0">Current week: ${shown}/6 credible selections. Weeks with fewer than six saved picks are excluded from the all-six accumulator rate. Pending or incomplete matches are excluded from settled rates.</p>`;
  if(!rows.length){root.innerHTML=`<div class="empty">${state.matches.length?"No Saturday 3:00 pm English-league fixtures currently meet the minimum selection standard. This list will not force weak picks.":"Load / refresh predictions on the Fixtures tab, then return here."}</div>`}
  else root.innerHTML=rows.map(({m,pick,risk},i)=>`<article class="match"><div class="row between wrap"><span class="league">#${i+1} · ${esc(m.league)}</span><div class="row wrap">${confidenceBadge(m.confidence)}<span class="tag">${Math.round(pick*100)}% ${outcomeName(m.prediction)}</span></div></div><div class="meta">${esc(weeklyWeekLabel(m.date))} · Model ${MODELS[state.activeIndex]?.short||"B"}</div><div class="row between" style="margin-top:7px"><strong class="grow">${esc(m.home)}</strong><strong>${esc(m.predictedScore||"—")}</strong><strong class="grow" style="text-align:right">${esc(m.away)}</strong></div><div class="meta">Expected goals: ${Number(m.homeLambda).toFixed(2)} – ${Number(m.awayLambda).toFixed(2)} · Risk: ${esc(risk)}</div>${probsHtml(m)}<div class="notice"><strong>Why it ranked</strong><br>${esc(outcomeName(m.prediction))} is the model's top outcome at ${Math.round(pick*100)}%, with confidence ${m.confidence}/10. Ranking also considers supporting evidence and contradictory-form risks.</div><details><summary>Full prediction details and evidence</summary>${insidePredictionHtml(m)}</details></article>`).join("");
- const tracked=state.weeklyPicks.filter(x=>x.actualOutcome),wins=tracked.filter(x=>x.prediction===x.actualOutcome).length;
- $("weeklyPerformance").innerHTML=tracked.length?`<p><strong>${wins}/${tracked.length}</strong> correct outcomes (${(wins/tracked.length*100).toFixed(1)}%). This is the saved weekly-pick record; it may be incomplete if the app wasn't refreshed after matches finished.</p><div class="tablewrap"><table><thead><tr><th>Fixture</th><th>Saved pick</th><th>Final score</th><th>Result</th></tr></thead><tbody>${tracked.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).map(x=>`<tr><td>${esc(x.home)} v ${esc(x.away)}</td><td>${outcomeName(x.prediction)} · ${x.confidence}/10</td><td>${esc(x.actualScore||"—")}</td><td>${x.actualOutcome===x.prediction?"Correct":"Incorrect"}</td></tr>`).join("")}</tbody></table></div>`:`No completed weekly selections tracked yet. Refresh after the matches finish to update results.`;
+ const tracked=settledPicks;
+ const positionRows=Array.from({length:6},(_,i)=>{
+  const position=i+1,group=tracked.filter(x=>Number(x.pickPosition)===position),hits=group.filter(x=>x.actualOutcome===x.prediction).length;
+  return `<tr><td>Pick ${position}</td><td>${hits}</td><td>${group.length}</td><td>${group.length?(hits/group.length*100).toFixed(1)+"%":"—"}</td></tr>`;
+ }).join("");
+ const trackedRows=tracked.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).map(x=>`<tr><td>${esc(x.home)} v ${esc(x.away)}</td><td>${esc(weeklyWeekLabel(x.date))} · Pick ${Number(x.pickPosition)||"—"}</td><td>${outcomeName(x.prediction)} · ${x.confidence}/10</td><td>${esc(x.actualScore||"—")}</td><td>${x.actualOutcome===x.prediction?"Correct":"Incorrect"}</td></tr>`).join("");
+ $("weeklyPerformance").innerHTML=`<h3>Pick-by-pick hit rate</h3><div class="tablewrap"><table><thead><tr><th>Pick position</th><th>Correct</th><th>Settled</th><th>Hit rate</th></tr></thead><tbody>${positionRows}</tbody></table></div>
+ <h3 style="margin-top:16px">Settled selections</h3>${tracked.length?`<p><strong>${correctPicks.length}/${tracked.length}</strong> correct overall (${(correctPicks.length/tracked.length*100).toFixed(1)}%).</p><div class="tablewrap"><table><thead><tr><th>Fixture</th><th>Week / position</th><th>Saved pick</th><th>Final score</th><th>Result</th></tr></thead><tbody>${trackedRows}</tbody></table></div>`:`<p>No completed weekly selections tracked yet. Refresh after matches finish to update results.</p>`}
+ <p class="muted smalltext" style="margin-top:10px">Accumulator performance counts only weeks with six saved selections and all six settled. A week with fewer than six credible picks or any pending/postponed fixture is not counted as a completed accumulator attempt.</p>`;
 }
 async function fetchLiveSchedule(){
  const filter=$("liveStatusFilter");if(!filter)return;
