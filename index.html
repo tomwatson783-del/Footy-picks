@@ -290,11 +290,11 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
   <div><label for="sort">Sort by</label><select id="sort"><option value="date">Kick-off date</option><option value="confidence">Confidence</option></select></div>
  </div>
  <div class="row wrap" style="margin-bottom:12px"><button class="btn" id="load">Load / refresh predictions</button><button class="btn secondary" id="top10">Show Top 10 picks</button><button class="btn secondary" id="goalThreats">Show Goal Threats</button></div>
- <div class="notice">Predictions use earlier completed league results, opponent-adjusted form and a restrained home/away factor. Risk alerts are directional: only recent-form evidence that contradicts the predicted outcome lowers confidence; evidence that supports the pick can strengthen confidence. Historical shots and xG are not consistently available in the current feed. Expected goals are averages, not exact-score guarantees. The displayed score drives the predicted outcome under the 0.5 goal-gap rule. Confidence is an indicative rating, not a guarantee.</div>
+ <div class="notice">Predictions use earlier completed league results, opponent-adjusted form and team-specific home/away form. Risk alerts are directional: only recent-form evidence that contradicts the predicted outcome lowers confidence; evidence that supports the pick can strengthen confidence. Historical shots and xG are not consistently available in the current feed. Expected goals are averages, not exact-score guarantees. The displayed score drives the predicted outcome under the 0.5 goal-gap rule. Confidence is an indicative rating, not a guarantee.</div>
  <div class="confidence-legend">
   <span class="tag confidence-high">🟢 Confidence 9–10</span><span class="tag confidence-medium">🟠 Confidence 7–8</span><span class="tag confidence-low">🔴 Confidence 0–6</span>
  </div>
- <div id="topbox"></div><div id="goalThreatBox"></div><div id="fixtureStatus" class="muted smalltext"></div><div id="riskSummary"></div><div id="fixtureList"><div class="empty">Tap “Load / refresh predictions” to begin.</div></div>
+ <div id="topbox"></div><div id="goalThreatBox"></div><div id="fixtureStatus" class="muted smalltext"></div><div id="fixtureList"><div class="empty">Tap “Load / refresh predictions” to begin.</div></div>
 </section>
 
 <section id="weekly" hidden>
@@ -358,11 +358,17 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 </section>
 
 <section id="test" hidden>
- <h2>Model Test</h2><p class="muted">Compares four recent-form models on a later chronological test period. Each match is predicted using only results that happened before it.</p>
+ <h2>Model Test</h2><p class="muted">Compares all 12 window-and-weight combinations on a later chronological test period. Each match is predicted using only results that happened before it.</p>
  <div class="notice"><strong>How to read the test:</strong> higher outcome accuracy is better; lower Brier score and log loss are better. The test period is used to compare candidates, so its winner is not proof of future performance.</div>
  <button class="btn" id="runTest">Run historical model test</button><div id="testStatus" class="muted smalltext" style="margin:10px 0"></div><div id="testResults"></div>
- <h3>Models compared</h3><div class="tablewrap"><table><thead><tr><th>Model</th><th>Last 15</th><th>Last 10</th><th>Last 5</th></tr></thead><tbody>
-  <tr><td>A · Stable</td><td>60%</td><td>30%</td><td>10%</td></tr><tr><td>B · Balanced</td><td>30%</td><td>40%</td><td>30%</td></tr><tr><td>C · Recent</td><td>10%</td><td>30%</td><td>60%</td></tr><tr><td>D · Very recent</td><td>20%</td><td>20%</td><td>60%</td></tr>
+  <h3>Confidence Calibrator — experimental only</h3><div class="panel"><p class="muted smalltext">Experiments do not change live predictions. Enter four point maxima totalling 10; other settings can be tested independently.</p>
+  <div class="controls"><div><label>Probability</label><input id="calProb" type="number" min="1" max="10" value="5"></div><div><label>Goal signal</label><input id="calGoal" type="number" min="1" max="10" value="2"></div><div><label>History</label><input id="calHist" type="number" min="1" max="10" value="2"></div><div><label>Support</label><input id="calSupport" type="number" min="1" max="10" value="1"></div><div><label>Medium risk deduction</label><input id="calMedium" type="number" min="0" max="10" value="1"></div><div><label>High risk deduction</label><input id="calHigh" type="number" min="0" max="10" value="2"></div><div><label>History coverage target</label><input id="calTarget" type="number" min="1" max="40" value="10"></div><div><label>Under 5-match cap</label><input id="calLowCap" type="number" min="1" max="10" value="6"></div></div>
+  <div class="controls"><div><label>Gap below 1.00 cap</label><input id="calGap1" type="number" min="1" max="10" value="7"></div><div><label>Gap below 1.50 cap</label><input id="calGap15" type="number" min="1" max="10" value="8"></div><div><label>Gap below 2.00 cap</label><input id="calGap2" type="number" min="1" max="10" value="10"></div><div><label>Gap exactly 2.00 cap</label><input id="calGapExact" type="number" min="1" max="10" value="9"></div></div>
+  <button class="btn secondary" id="calTest">Evaluate calibration</button> <button class="btn" id="calApply">Apply calibration to Settings</button><div id="calResults" class="muted smalltext" style="margin-top:10px"></div></div>
+  <h3>Confidence Analysis</h3><div class="panel"><div class="controls"><div><label>Confidence</label><select id="analysisConfidence"><option value="all">All</option></select></div><div><label>Risk</label><select id="analysisRisk"><option value="all">All</option><option>low</option><option>medium</option><option>high</option></select></div><div><label>Outcome</label><select id="analysisOutcome"><option value="all">All</option><option>H</option><option>D</option><option>A</option></select></div><div><label>Window set</label><select id="analysisWindow"><option value="all">All</option><option value="0">15/10/5</option><option value="1">10/6/3</option><option value="2">8/5/3</option></select></div><div><label>Weighting</label><select id="analysisWeight"><option value="all">All</option><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select></div><div><label>League</label><select id="analysisLeague"><option value="all">All</option></select></div><div><label>Look back (days)</label><select id="analysisDays"><option value="0">All</option><option value="30">30</option><option value="90">90</option><option value="365">365</option></select></div></div><button class="btn secondary" id="analysisRefresh">Refresh analysis</button><div id="analysisResults"></div></div>
+  <h3>Exact-score Performance</h3><div id="exactResults"></div>
+  <h3>Models compared</h3><div class="tablewrap"><table><thead><tr><th>Model</th><th>Longest</th><th>Middle</th><th>Shortest</th></tr></thead><tbody>
+   <tr><td>A · Stable</td><td>60%</td><td>30%</td><td>10%</td></tr><tr><td>B · Balanced</td><td>40%</td><td>35%</td><td>25%</td></tr><tr><td>C · Recent</td><td>25%</td><td>30%</td><td>45%</td></tr><tr><td>D · Very recent</td><td>10%</td><td>20%</td><td>70%</td></tr>
  </tbody></table></div>
 </section>
 
@@ -371,9 +377,14 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
   <h3>How should the model be selected?</h3>
   <label class="row" style="padding:10px 0"><input type="radio" name="mode" value="manual" id="modeManual"><span><strong>Manual</strong><br><span class="muted smalltext">Choose which model to use.</span></span></label>
   <label class="row" style="padding:10px 0"><input type="radio" name="mode" value="auto" id="modeAuto"><span><strong>Auto</strong><br><span class="muted smalltext">Select the eligible model with the lowest Brier score in the latest test.</span></span></label>
-  <div style="margin-top:12px"><label for="modelChoice">Choose model (Manual mode)</label><select id="modelChoice"><option value="0">A — Stable (60/30/10)</option><option value="1">B — Balanced (30/40/30)</option><option value="2">C — Recent (10/30/60)</option><option value="3">D — Very recent (20/20/60)</option></select></div>
-  <div style="margin-top:12px"><label for="minSample">Minimum test matches before Auto changes model</label><select id="minSample"><option value="50">50 matches</option><option value="100" selected>100 matches</option><option value="150">150 matches</option><option value="200">200 matches</option></select></div>
+  <div style="margin-top:12px"><label for="modelChoice">Choose model (Manual mode)</label><select id="modelChoice"><option value="0">A — Stable (60/30/10)</option><option value="1">B — Balanced (40/35/25)</option><option value="2">C — Recent (25/30/45)</option><option value="3">D — Very recent (10/20/70)</option></select></div>
+  <div style="margin-top:12px"><label for="windowChoice">Recent-form windows (Manual mode)</label><select id="windowChoice"><option value="0">15 / 10 / 5</option><option value="1">10 / 6 / 3</option><option value="2">8 / 5 / 3</option></select></div><div style="margin-top:12px"><label for="minSample">Minimum test matches before Auto changes model</label><select id="minSample"><option value="50">50 matches</option><option value="100" selected>100 matches</option><option value="150">150 matches</option><option value="200">200 matches</option></select></div>
   <p class="muted smalltext">Auto uses Brier score, which measures the accuracy of all three outcome probabilities. If there are too few eligible test matches, Auto falls back to your manual model.</p>
+  <h3 style="margin-top:16px">Confidence scoring — active settings</h3>
+  <p class="muted smalltext">Four integer maxima must total exactly 10. Risk penalties and sample caps apply after points are earned.</p>
+  <div class="controls"><div><label>Probability points</label><input id="confProb" type="number" min="1" max="10"></div><div><label>Goal-balance points</label><input id="confGoal" type="number" min="1" max="10"></div><div><label>History points</label><input id="confHist" type="number" min="1" max="10"></div><div><label>Support points</label><input id="confSupport" type="number" min="1" max="10"></div></div>
+  <div class="controls"><div><label>Medium-risk deduction</label><input id="confMedium" type="number" min="0" max="10"></div><div><label>High-risk deduction</label><input id="confHigh" type="number" min="0" max="10"></div></div>
+  <p class="muted smalltext">Goal-gap caps and low-history thresholds can be tested in the separate Calibrator and applied explicitly.</p>
   <button class="btn" id="saveSettings">Save settings</button><p id="settingsStatus" class="muted smalltext"></p>
  </div>
 </section>
@@ -406,15 +417,17 @@ function initLeagueSelects(){
 
 const MODELS=[
  {name:"A — Stable",short:"A",weights:[.60,.30,.10]},
- {name:"B — Balanced",short:"B",weights:[.30,.40,.30]},
- {name:"C — Recent",short:"C",weights:[.10,.30,.60]},
- {name:"D — Very recent",short:"D",weights:[.20,.20,.60]}
+ {name:"B — Balanced",short:"B",weights:[.40,.35,.25]},
+ {name:"C — Recent",short:"C",weights:[.25,.30,.45]},
+ {name:"D — Very recent",short:"D",weights:[.10,.20,.70]}
 ];
+const WINDOW_SETS=[[15,10,5],[10,6,3],[8,5,3]];
+const DEFAULT_CONF={points:[5,2,2,1],mediumPenalty:1,highPenalty:2,historyTarget:10,lowSampleThreshold:5,lowSampleCap:6,midSampleThreshold:8,midSampleCap:8,gapCaps:[{under:1,cap:7},{under:1.5,cap:8},{under:2,cap:10},{under:2.000000001,cap:9}]};
 const WINDOWS=[15,10,5],$=id=>document.getElementById(id);
 const state={
  matches:[],loaded:false,loading:false,topMode:false,goalThreatMode:false,
  acc:readStore("fp_acc",[]),history:readStore("fp_prediction_history",[]),
- lastTest:null,activeIndex:1,mode:"manual",manualIndex:1,minSample:100,
+ lastTest:null,activeIndex:1,activeWindow:0,manualWindow:0,mode:"manual",manualIndex:1,minSample:100,confidenceConfig:JSON.parse(JSON.stringify(DEFAULT_CONF)),
  liveMatches:[],liveSchedule:[],liveScheduleFilter:"live",weeklyPicks:readStore("fp_weekly_top6",[]),liveStats:{},liveHistory:readStore("fp_live_prediction_history",[]),liveFilter:"all",liveLeagueFilter:"all",liveSituationFilter:"all",liveLoading:false,liveLastUpdated:null
 };
 
@@ -549,7 +562,7 @@ function oppositionAdjustedHistory(hist,teamRatings,leagueAvg){
  });
 }
 function blendedStats(hist,model,leagueAvg){
- const parts=WINDOWS.map(n=>windowStats(hist,n,leagueAvg)),w=model.weights,blend=k=>parts.reduce((s,p,i)=>s+p[k]*w[i],0);
+ const parts=(model.windows||WINDOW_SETS[state.activeWindow]||WINDOWS).map(n=>windowStats(hist,n,leagueAvg)),w=model.weights,blend=k=>parts.reduce((s,p,i)=>s+p[k]*w[i],0);
  return{attack:blend("attack"),defence:blend("defence"),ppg:blend("ppg"),gd:blend("gd"),count:hist.length,history:hist.slice(-5),windows:parts};
 }
 function alignOutcomeProbabilities(probabilities,prediction){
@@ -649,7 +662,7 @@ function matchRiskAssessment(homeHistory,awayHistory,teamRatings,prediction){
  const level=riskScore>=4?"high":riskScore>=2?"medium":"low";
  return{level,score:riskScore,home,away,flags,supportScore:Math.min(2,supportScore),supportFlags};
 }
-function calculatePrediction(m,previous,model){
+function calculatePrediction(m,previous,model,confidenceConfig=state.confidenceConfig){
  const homeKey=teamKey(m,"H"),awayKey=teamKey(m,"A"),la=leagueAverages(previous);
  const rawHomeHist=historyForTeam(previous,homeKey),rawAwayHist=historyForTeam(previous,awayKey);
  // Build current league-only team ratings from the available completed results.
@@ -669,7 +682,7 @@ function calculatePrediction(m,previous,model){
  // Venue form is a restrained secondary factor, shrunk toward each team's overall form.
  const homeVenue=venueFormAdjustment(rawHomeHist,"home"),awayVenue=venueFormAdjustment(rawAwayHist,"away");
  const homeDefVenue=venueFormAdjustment(rawHomeHist,"home"),awayDefVenue=venueFormAdjustment(rawAwayHist,"away");
- const hl=clamp(leagueHome*homeAttack*awayDefence*1.04*homeVenue.attack*awayVenue.conceded,.15,4.2);
+ const hl=clamp(leagueHome*homeAttack*awayDefence*homeVenue.attack*awayVenue.conceded,.15,4.2);
  const al=clamp(leagueAway*awayAttack*homeDefence*awayVenue.attack*homeDefVenue.conceded,.15,4.2);
  const dist=scoreDistribution(hl,al);
  // The expected-goal gap drives the outcome. A gap below 0.5 is a draw pick.
@@ -681,41 +694,39 @@ function calculatePrediction(m,previous,model){
  const softened={H:dist.probs.H*(1-riskBlend)+riskBlend/3,D:dist.probs.D*(1-riskBlend)+riskBlend/3,A:dist.probs.A*(1-riskBlend)+riskBlend/3};
  const probs=alignOutcomeProbabilities(softened,prediction);
  const predictedScore=consistentPredictedScore(hl,al,prediction);
- const sorted=Object.values(probs).sort((x,y)=>y-x),coverage=clamp(Math.min(h.count,a.count)/10,0,1);
+ const sorted=Object.values(probs).sort((x,y)=>y-x),coverage=clamp(Math.min(h.count,a.count)/(confidenceConfig?.historyTarget||10),0,1);
  const probabilityGap=sorted[0]-sorted[1];
  const goalGap=Math.abs(xgDifference),isDraw=prediction==="D";
  // A larger gap supports a win pick; a smaller gap supports a draw pick.
  const differenceStrength=isDraw?clamp(1-goalGap/1.5,0,1):clamp(goalGap/1.5,0,1);
- const supportBonus=Math.min(1,risk.supportScore*.5);
- const basePoints=3,probabilityContribution=probabilityGap*10,goalContribution=differenceStrength*2,historyContribution=coverage*2;
- const rawScore=clamp(basePoints+probabilityContribution+goalContribution+historyContribution+supportBonus,1,10);
- const minTeamSample=Math.min(h.count,a.count),riskPenalty=risk.level==="high"?2:risk.level==="medium"?1:0;
- const adjustedScore=clamp(rawScore-riskPenalty,1,10),roundedScore=Math.round(adjustedScore);
- // Short histories limit confidence; larger ratings require reliable samples.
- const sampleCap=minTeamSample<5?6:minTeamSample<8?8:10;
- // High win ratings require evidence as well as a large goal gap.
- const strongWinEvidence=sorted[0]>=.55&&supportBonus>=.5&&risk.level==="low"&&minTeamSample>=5;
- const exceptionalWinEvidence=strongWinEvidence&&sorted[0]>=.65&&probabilityGap>=.20&&supportBonus>=1&&minTeamSample>=8&&adjustedScore>=9.5;
- let confidenceLimit=10,eligibilityReason="No goal-gap ceiling applies to draws; draw confidence uses probability, goal balance, evidence, sample size and risk.";
+ const cfg=confidenceConfig||DEFAULT_CONF,pts=cfg.points||DEFAULT_CONF.points;
+ const supportStrength=clamp(risk.supportScore*.5,0,1),supportBonus=supportStrength*pts[3];
+ const basePoints=0,probabilityContribution=clamp(probabilityGap/.40,0,1)*pts[0],goalContribution=differenceStrength*pts[1],historyContribution=coverage*pts[2];
+ const rawScore=clamp(probabilityContribution+goalContribution+historyContribution+supportBonus,0,10);
+ const minTeamSample=Math.min(h.count,a.count),riskPenalty=risk.level==="high"?cfg.highPenalty:risk.level==="medium"?cfg.mediumPenalty:0;
+ const adjustedScore=clamp(rawScore-riskPenalty,0,10),roundedScore=Math.round(adjustedScore);
+ const sampleCap=minTeamSample<cfg.lowSampleThreshold?cfg.lowSampleCap:minTeamSample<cfg.midSampleThreshold?cfg.midSampleCap:10;
+ const strongWinEvidence=sorted[0]>=.55&&supportStrength>=.5&&risk.level==="low"&&minTeamSample>=5;
+ const exceptionalWinEvidence=strongWinEvidence&&sorted[0]>=.65&&probabilityGap>=.20&&supportStrength>=1&&minTeamSample>=8&&adjustedScore>=9.5;
+ let confidenceLimit=10,eligibilityReason="Draws have no goal-gap cap.";
  if(!isDraw){
-  if(goalGap<1){confidenceLimit=7;eligibilityReason="The expected-goals gap is below 1.00, so win confidence is limited to 7/10."}
-  else if(goalGap<2){confidenceLimit=8;eligibilityReason="The expected-goals gap is at least 1.00 but below 2.00, so win confidence is limited to 8/10."}
-  else if(!strongWinEvidence){confidenceLimit=8;eligibilityReason="The 2.00-goal threshold is met, but probability, supporting evidence, risk or sample requirements for 9/10 are not all met."}
-  else if(!exceptionalWinEvidence){confidenceLimit=9;eligibilityReason="The 9/10 criteria are met, but the additional exceptional-evidence criteria for 10/10 are not all met."}
-  else eligibilityReason="The 2.00-goal threshold and exceptional-evidence checks are met; 10/10 remains subject to the final rounded score and sample limit.";
+  const cap=(cfg.gapCaps||[]).find(rule=>goalGap<rule.under);
+  if(cap){confidenceLimit=cap.cap;eligibilityReason=`Goal-gap ${goalGap.toFixed(2)} is below ${cap.under.toFixed(2)}: cap ${cap.cap}/10.`;}
+  if(confidenceLimit>8&&!strongWinEvidence){confidenceLimit=8;eligibilityReason+=" Strong win evidence required for 9/10.";}
+  else if(confidenceLimit>9&&!exceptionalWinEvidence){confidenceLimit=9;eligibilityReason+=" Exceptional evidence required for 10/10.";}
  }
  const confidence=Math.max(1,Math.min(roundedScore,sampleCap,confidenceLimit));
  const drawThresholdApplied=false;
  const expectedGoalBreakdown={
-  home:{leagueBaseline:leagueHome,attackRatio:homeAttack,opponentDefenceRatio:awayDefence,homeAdvantage:1.04,venueAttack:homeVenue.attack,opponentVenueConceded:awayVenue.conceded,uncapped:leagueHome*homeAttack*awayDefence*1.04*homeVenue.attack*awayVenue.conceded,final:hl,venueMatches:homeVenue.count},
+  home:{leagueBaseline:leagueHome,attackRatio:homeAttack,opponentDefenceRatio:awayDefence,homeAdvantage:1,venueAttack:homeVenue.attack,opponentVenueConceded:awayVenue.conceded,uncapped:leagueHome*homeAttack*awayDefence*homeVenue.attack*awayVenue.conceded,final:hl,venueMatches:homeVenue.count},
   away:{leagueBaseline:leagueAway,attackRatio:awayAttack,opponentDefenceRatio:homeDefence,homeAdvantage:1,venueAttack:awayVenue.attack,opponentVenueConceded:homeDefVenue.conceded,uncapped:leagueAway*awayAttack*homeDefence*awayVenue.attack*homeDefVenue.conceded,final:al,venueMatches:awayVenue.count}
  };
- const confidenceBreakdown={topProbability:sorted[0],secondProbability:sorted[1],probabilityGap,goalGap,differenceStrength,coverage,supportBonus,basePoints,probabilityContribution,goalContribution,historyContribution,rawScore,adjustedScore,roundedScore,rawConfidence:roundedScore,riskLevel:risk.level,riskPenalty,minTeamSample,sampleCap,drawThresholdApplied,confidenceLimit,strongWinEvidence,exceptionalWinEvidence,eligibilityReason,final:confidence};
+ const confidenceBreakdown={pointMaxima:pts.slice(),topProbability:sorted[0],secondProbability:sorted[1],probabilityGap,goalGap,differenceStrength,coverage,supportBonus,basePoints,probabilityContribution,goalContribution,historyContribution,rawScore,adjustedScore,roundedScore,rawConfidence:roundedScore,riskLevel:risk.level,riskPenalty,minTeamSample,sampleCap,drawThresholdApplied,confidenceLimit,strongWinEvidence,exceptionalWinEvidence,eligibilityReason,final:confidence};
  return{probs,prediction,confidence,confidenceSample:minTeamSample,h,a,homeLambda:hl,awayLambda:al,xgDifference,drawThresholdApplied,homeVenueMatches:homeVenue.count,awayVenueMatches:awayVenue.count,mostLikelyScore:dist.mostLikelyScore,scoreProbability:dist.scoreProbability,predictedScore,leagueAverage:la.all,leagueHome,leagueAway,homeAttack,awayAttack,homeDefence,awayDefence,homeVenue,awayVenue,expectedGoalBreakdown,confidenceBreakdown,risk};
 }
 function updatePredictions(matches,index=state.activeIndex){
  const by={};for(const m of matches)(by[m.leagueId]??=[]).push(m);
- for(const id of Object.keys(by)){const rows=by[id].sort((a,b)=>new Date(a.date)-new Date(b.date));for(let i=0;i<rows.length;i++){const m=rows[i],previous=rows.slice(0,i).filter(isFinished);Object.assign(m,calculatePrediction(m,previous,MODELS[index]))}}
+ for(const id of Object.keys(by)){const rows=by[id].sort((a,b)=>new Date(a.date)-new Date(b.date));for(let i=0;i<rows.length;i++){const m=rows[i],previous=rows.slice(0,i).filter(x=>isFinished(x)&&new Date(x.date)<new Date(m.date));Object.assign(m,calculatePrediction(m,previous,{...MODELS[index],windows:WINDOW_SETS[state.activeWindow]}))}}
  return matches;
 }
 function resultString(m){return isFinished(m)?`${m.homeScore}–${m.awayScore}`:"vs"}
@@ -789,18 +800,17 @@ function expectedGoalAuditHtml(m){
    <div class="form-summary"><strong>1. League starting point: ${fmt(baseline)}</strong><div class="muted smalltext">The average goals scored by the ${name.toLowerCase()==="home"?"home":"away"} side in this league. This is where the estimate starts.</div></div>
    ${effect("2. Team attacking strength",attack,ratioText(attack,"This team's opponent-adjusted attack"))}
    ${effect("3. Opponent defensive strength",defence,ratioText(defence,`The ${opponent}'s goals-conceded record`))}
-   ${name==="Home"?effect("4. Home advantage",home,"A small 4% home adjustment is applied before venue-specific factors."):""}
-   ${effect(`${name==="Home"?"5":"4"}. Performance at this venue`,venue,ratioText(venue,`This team's recent ${name.toLowerCase()==="home"?"home":"away"} scoring record`))}
-   ${effect(`${name==="Home"?"6":"5"}. Opponent's venue defence`,oppVenue,ratioText(oppVenue,`How often the opponent concedes in the relevant venue context`))}
-   <div class="form-summary"><strong>Venue sample: ${x.venueMatches} ${x.venueMatches===1?"match":"matches"}</strong><div class="muted smalltext">Small venue samples are pulled back toward the team's overall form to reduce overreaction.</div></div>
-   <hr><div class="form-summary"><strong>Multiply the factors together</strong><div class="muted smalltext">${fmt(baseline)} × ${fmt(attack)} × ${fmt(defence)}${name==="Home"?` × ${fmt(home)}`:""} × ${fmt(venue)} × ${fmt(oppVenue)} = ${fmt(x.uncapped)}</div></div>
+   ${effect("4. Team home/away form",venue,ratioText(venue,`This team's recent ${name.toLowerCase()==="home"?"home":"away"} scoring record`))}
+   ${effect("5. Opponent home/away defensive form",oppVenue,ratioText(oppVenue,`How often the opponent concedes in the relevant venue context`))}
+   <div class="form-summary"><strong>Home/away form sample: ${x.venueMatches} ${x.venueMatches===1?"match":"matches"}</strong><div class="muted smalltext">Small home/away samples are pulled back toward the team's overall form to reduce overreaction.</div></div>
+   <hr><div class="form-summary"><strong>Multiply the factors together</strong><div class="muted smalltext">${fmt(baseline)} × ${fmt(attack)} × ${fmt(defence)} × ${fmt(venue)} × ${fmt(oppVenue)} = ${fmt(x.uncapped)}</div></div>
    <div class="row between" style="margin-top:8px"><strong>Final expected goals</strong><strong>${fmt(x.final)}</strong></div>
    ${Math.abs(Number(x.final)-Number(x.uncapped))>.0005?`<p class="analytics-note">The raw result was limited to the model's permitted range of 0.15 to 4.20 goals.</p>`:""}
   </div>`;
  };
  return `<div class="analytics-card full"><h4>Expected Goals — plain-English breakdown</h4>
  <p class="analytics-note">Expected goals here means the model's estimate of how many goals a team might score on average in this match. It is built from league scoring averages and historical results; it is not shot-based xG and does not mean the team is guaranteed to score that number.</p>
- <p class="analytics-note">Each multiplier adjusts the starting league average: ×1.10 raises it by 10%; ×0.90 lowers it by 10%; ×1.00 leaves it unchanged. The attack and defence measures use the selected model's weighted 15/10/5-match form and adjust for the quality of previous opponents.</p>
+ <p class="analytics-note">Each multiplier adjusts the starting league average: ×1.10 raises it by 10%; ×0.90 lowers it by 10%; ×1.00 leaves it unchanged. The attack and defence measures use the selected model's selected window-set form and adjust for the quality of previous opponents.</p>
  <div class="analytics-grid">${side("Home",b.home,m.away)}${side("Away",b.away,m.home)}</div>
  <p class="analytics-note">The two final estimates feed into the scoreline and outcome model. The score prediction is still an estimate, not a guarantee; the model's draw rule and probability calculations are shown separately below.</p></div>`;
 }
@@ -816,12 +826,12 @@ function confidenceAuditHtml(m){
   :"For a win, a larger expected-goals gap in favour of the predicted winner earns more points.";
  return `<div class="analytics-card full"><h4>Confidence — how the rating was earned</h4>
  <p class="analytics-note">This is the model's confidence score, not a guarantee or a calibrated probability of being correct. Each line shows the actual contribution used by the calculation.</p>
- <div class="form-summary"><strong>1. Starting points:</strong> ${points(c.basePoints)} (the model starts from 3 points)</div>
+ <div class="form-summary"><strong>Starting points:</strong> 0. Every point must be earned.</div>
  <div class="form-summary"><strong>2. Outcome probability:</strong> ${pct(c.topProbability)} top outcome vs ${pct(c.secondProbability)} second-highest outcome; probability separation ${n(c.probabilityGap*100).toFixed(1)} percentage points contributes <strong>+${points(c.probabilityContribution)}</strong>.</div>
- <div class="form-summary"><strong>3. ${goalLabel}:</strong> expected goals ${n(m.homeLambda).toFixed(2)}–${n(m.awayLambda).toFixed(2)}, absolute difference ${n(c.goalGap).toFixed(2)}. ${goalExplain} Contribution: <strong>+${points(c.goalContribution)}</strong> (up to 2 points).</div>
- <div class="form-summary"><strong>4. Historical data:</strong> the smaller team sample is ${n(c.minTeamSample).toFixed(0)} matches, giving ${Math.round(n(c.coverage)*100)}% coverage and <strong>+${points(c.historyContribution)}</strong> (up to 2 points).</div>
- <div class="form-summary"><strong>5. Supporting evidence:</strong> <strong>+${points(c.supportBonus)}</strong> (up to 1 point from the existing supporting signals).</div>
- <div class="form-summary"><strong>Raw score:</strong> ${points(c.rawScore)} = starting points + probability + goal signal + history + supporting evidence.</div>
+ <div class="form-summary"><strong>3. ${goalLabel}:</strong> expected goals ${n(m.homeLambda).toFixed(2)}–${n(m.awayLambda).toFixed(2)}, absolute difference ${n(c.goalGap).toFixed(2)}. ${goalExplain} Contribution: <strong>+${points(c.goalContribution)}</strong> (up to ${n(c.pointMaxima?.[1]??2)} points).</div>
+ <div class="form-summary"><strong>4. Historical data:</strong> the smaller team sample is ${n(c.minTeamSample).toFixed(0)} matches, giving ${Math.round(n(c.coverage)*100)}% coverage and <strong>+${points(c.historyContribution)}</strong> (up to ${n(c.pointMaxima?.[1]??2)} points).</div>
+ <div class="form-summary"><strong>5. Supporting evidence:</strong> <strong>+${points(c.supportBonus)}</strong> (up to ${n(c.pointMaxima?.[3]??1)} points from supporting signals).</div>
+ <div class="form-summary"><strong>Raw score:</strong> ${points(c.rawScore)} = probability + goal signal + history + supporting evidence.</div>
  <div class="form-summary"><strong>Risk adjustment:</strong> −${points(c.riskPenalty)} (${esc(c.riskLevel||"unknown")} contradictory-form risk).</div>
  <div class="form-summary"><strong>Adjusted score:</strong> ${points(c.adjustedScore)}. Rounded to the nearest whole number: <strong>${n(c.roundedScore).toFixed(0)}/10</strong>.</div>
  <div class="form-summary"><strong>Eligibility/sample limits:</strong> maximum ${n(c.confidenceLimit).toFixed(0)}/10 from the verdict-specific rules and ${n(c.sampleCap).toFixed(0)}/10 from sample size. ${esc(c.eligibilityReason||"The final rating is limited by the score, sample size and eligibility rules.")}</div>
@@ -882,7 +892,7 @@ function upcoming(){
 function renderFixtures(){
  const list=upcoming();
  $("fixtureStatus").textContent=state.loaded?`${list.length} upcoming fixtures · ${state.matches.filter(isFinished).length} completed results loaded`:"";
- renderRiskSummary(list);
+
  $("fixtureList").innerHTML=list.length?list.map(matchCard).join(""):`<div class="empty">${state.loaded?"No upcoming fixtures found. Try another league or longer window.":"Load fixtures to see predictions."}</div>`;
  if(state.topMode)renderTop10();
  if(state.goalThreatMode)renderGoalThreats();
@@ -923,8 +933,8 @@ function removeAcc(i){state.acc.splice(i,1);store("fp_acc",state.acc);renderAccu
 function snapshotPredictions(matches){
  const now=Date.now();let added=0;
  for(const m of matches){if(new Date(m.date).getTime()<now-2*3600000||!m.probs)continue;const id=eventId(m),existing=state.history.find(x=>x.id===id);if(existing){if(!Number.isFinite(Number(existing.confidence))){existing.confidence=m.confidence;store("fp_prediction_history",state.history)}continue}
- state.history.push({id,leagueId:m.leagueId,league:m.league,home:m.home,away:m.away,date:m.date,prediction:m.prediction,confidence:m.confidence,probs:{...m.probs},predictedScore:m.predictedScore,homeLambda:m.homeLambda,awayLambda:m.awayLambda,expectedGoalBreakdown:m.expectedGoalBreakdown,supportFlags:(m.risk?.supportFlags||[]).map(f=>typeof f==="string"?f:f.text),riskLevel:m.risk?.level||"low",riskFlags:(m.risk?.flags||[]).map(f=>typeof f==="string"?f:f.text),modelIndex:state.activeIndex,savedAt:new Date().toISOString()});added++}
- state.history=state.history.filter(x=>Date.now()-new Date(x.date).getTime()<45*86400000).slice(-1500);store("fp_prediction_history",state.history);return added;
+ state.history.push({id,leagueId:m.leagueId,league:m.league,home:m.home,away:m.away,date:m.date,prediction:m.prediction,confidence:m.confidence,probs:{...m.probs},predictedScore:m.predictedScore,homeLambda:m.homeLambda,awayLambda:m.awayLambda,expectedGoalBreakdown:m.expectedGoalBreakdown,supportFlags:(m.risk?.supportFlags||[]).map(f=>typeof f==="string"?f:f.text),riskLevel:m.risk?.level||"low",riskFlags:(m.risk?.flags||[]).map(f=>typeof f==="string"?f:f.text),modelIndex:state.activeIndex,windowIndex:state.activeWindow,savedAt:new Date().toISOString()});added++}
+ state.history=state.history.filter(x=>Date.now()-new Date(x.date).getTime()<730*86400000).slice(-10000);store("fp_prediction_history",state.history);return added;
 }
 function renderConfidencePerformance(settled){
  const root=$("confidencePerformance");
@@ -963,36 +973,53 @@ function renderHistory(){
 async function refreshHistoryScores(){await loadData()}
 function brierScore(probs,actual){return(["H","D","A"].reduce((s,k)=>s+Math.pow((probs[k]||0)-(k===actual?1:0),2),0))/3}
 function logLoss(probs,actual){return-Math.log(Math.max(1e-6,Math.min(1,probs[actual]||0)))}
+function modelCombinations(){return WINDOW_SETS.flatMap((windows,windowIndex)=>MODELS.map((m,modelIndex)=>({...m,windows,windowIndex,modelIndex,key:`${windowIndex}-${modelIndex}`,name:`${windows.join("/")} · ${m.name}`})))}
 function runBacktest(all){
- const models=MODELS.map(model=>({name:model.name,short:model.short,total:0,correct:0,brier:0,logLoss:0,actual:{H:0,D:0,A:0},predicted:{H:0,D:0,A:0},classCorrect:{H:0,D:0,A:0},byLeague:{}}));
+ const models=modelCombinations().map(m=>({...m,total:0,correct:0,brier:0,logLoss:0,actual:{H:0,D:0,A:0},predicted:{H:0,D:0,A:0},classCorrect:{H:0,D:0,A:0},byLeague:{}}));
  const chron=all.filter(isFinished).slice().sort((a,b)=>new Date(a.date)-new Date(b.date)),history={},eligible=[];
- for(const m of chron){const prior=history[m.leagueId]||[],h=historyForTeam(prior,teamKey(m,"H")),a=historyForTeam(prior,teamKey(m,"A"));if(h.length>=3&&a.length>=3)eligible.push({m,prior:prior.slice()});(history[m.leagueId]??=[]).push(m)}
- const start=Math.floor(eligible.length*.70),testRows=eligible.slice(start);
- for(const row of testRows){const m=row.m,actual=getOutcome(m.homeScore,m.awayScore);for(let i=0;i<MODELS.length;i++){const r=models[i],p=calculatePrediction(m,row.prior,MODELS[i]),b=brierScore(p.probs,actual);r.total++;if(p.prediction===actual)r.correct++;r.brier+=b;r.logLoss+=logLoss(p.probs,actual);r.actual[actual]++;r.predicted[p.prediction]++;if(p.prediction===actual)r.classCorrect[actual]++;r.byLeague[m.leagueId]??={correct:0,total:0,brier:0};r.byLeague[m.leagueId].total++;if(p.prediction===actual)r.byLeague[m.leagueId].correct++;r.byLeague[m.leagueId].brier+=b}}
+ for(const m of chron){const prior=(history[m.leagueId]||[]).filter(x=>new Date(x.date)<new Date(m.date)),h=historyForTeam(prior,teamKey(m,"H")),a=historyForTeam(prior,teamKey(m,"A"));if(h.length>=8&&a.length>=8)eligible.push({m,prior:prior.slice(),minimum:Math.min(h.length,a.length)});(history[m.leagueId]??=[]).push(m)}
+ const start=Math.floor(eligible.length*.70),testRows=eligible.slice(start),records=[];
+ for(const row of testRows){const m=row.m,actual=getOutcome(m.homeScore,m.awayScore);for(const r of models){if(row.minimum<r.windows[0])continue;const p=calculatePrediction(m,row.prior,r),b=brierScore(p.probs,actual);r.total++;if(p.prediction===actual)r.correct++;r.brier+=b;r.logLoss+=logLoss(p.probs,actual);r.actual[actual]++;r.predicted[p.prediction]++;if(p.prediction===actual)r.classCorrect[actual]++;r.byLeague[m.leagueId]??={correct:0,total:0,brier:0};r.byLeague[m.leagueId].total++;if(p.prediction===actual)r.byLeague[m.leagueId].correct++;r.byLeague[m.leagueId].brier+=b;
+ records.push({id:eventId(m),date:m.date,leagueId:m.leagueId,league:m.league,home:m.home,away:m.away,prediction:p.prediction,confidence:p.confidence,probs:p.probs,predictedScore:p.predictedScore,actualScore:`${m.homeScore}–${m.awayScore}`,actualOutcome:actual,riskLevel:p.risk.level,windowIndex:r.windowIndex,modelIndex:r.modelIndex,key:r.key,goalGap:Math.abs(p.xgDifference),confidenceBreakdown:p.confidenceBreakdown});}}
  models.forEach(r=>{if(r.total){r.brier/=r.total;r.logLoss/=r.total;for(const id of Object.keys(r.byLeague))r.byLeague[id].brier/=r.byLeague[id].total}});
- return{results:models,archive:all.length,completed:chron.length,eligible:eligible.length,testCount:testRows.length,trainCount:start};
+ return{results:models,records,archive:all.length,completed:chron.length,eligible:eligible.length,testCount:testRows.length,trainCount:start};
 }
 function bestTestModel(test){if(!test)return null;return test.results.filter(r=>r.total>=state.minSample).sort((a,b)=>a.brier-b.brier)[0]||null}
 function renderTest(test){
- if(!test||!test.testCount){$("testResults").innerHTML=`<div class="notice error">Not enough eligible historical matches to compare models. Try again after more results are available.</div>`;return}
- const ranked=test.results.slice().filter(r=>r.total).sort((a,b)=>a.brier-b.brier),best=ranked[0];
- $("testResults").innerHTML=`<div class="panel"><div class="muted smalltext">Lowest Brier score in the holdout sample</div><div class="row between"><h3>${esc(best.name)}</h3><strong style="font-size:25px">${best.brier.toFixed(4)}</strong></div><div class="muted smalltext">${best.correct}/${best.total} correct top picks · ${(best.correct/best.total*100).toFixed(1)}% accuracy · lower Brier is better.</div></div><div class="tablewrap panel"><table><thead><tr><th>Model</th><th>Accuracy</th><th>Brier ↓</th><th>Log loss ↓</th><th>H/D/A correct</th></tr></thead><tbody>${ranked.map(r=>`<tr><td>${esc(r.name)}</td><td>${(r.correct/r.total*100).toFixed(1)}%</td><td>${r.brier.toFixed(4)}</td><td>${r.logLoss.toFixed(4)}</td><td>${r.classCorrect.H}/${r.actual.H} · ${r.classCorrect.D}/${r.actual.D} · ${r.classCorrect.A}/${r.actual.A}</td></tr>`).join("")}</tbody></table></div><h3>Accuracy by league — ${esc(best.name)}</h3><div class="tablewrap panel"><table><thead><tr><th>League</th><th>Correct</th><th>Accuracy</th><th>Brier</th></tr></thead><tbody>${Object.entries(best.byLeague).map(([id,v])=>`<tr><td>${esc(LEAGUES[id]||id)}</td><td>${v.correct}/${v.total}</td><td>${(v.correct/v.total*100).toFixed(1)}%</td><td>${v.brier.toFixed(4)}</td></tr>`).join("")}</tbody></table></div><p class="muted smalltext">Retrieved archive: ${test.archive}; completed: ${test.completed}; eligible walk-forward matches: ${test.eligible}. Holdout testing can overfit and does not guarantee future performance.</p>`;
+ if(!test||!test.records.length){$("testResults").innerHTML=`<div class="notice error">Insufficient same-league historical matches for an eligible holdout sample.</div>`;return}
+ const ranked=test.results.filter(r=>r.total).sort((a,b)=>a.brier-b.brier),best=bestTestModel(test);
+ $("testResults").innerHTML=`<div class="panel"><h3>${best?`Auto-eligible winner: ${esc(best.name)}`:"No Auto-eligible winner at the selected minimum sample"}</h3><p class="muted smalltext">${best?`Brier ${best.brier.toFixed(4)} on ${best.total} eligible holdout matches. Accuracy ${(best.correct/best.total*100).toFixed(1)}%, log loss ${best.logLoss.toFixed(4)}.`:"You may lower the minimum sample in Settings or retrieve more history."} Chronological holdout is the later 30% of fixtures with at least 8 prior same-league matches; each combination also enforces its own longest-window minimum. The earlier 70% is not used to fit model weights.</p></div><div class="tablewrap panel"><table><thead><tr><th>Window / weights</th><th>Eligible</th><th>Accuracy</th><th>Brier ↓</th><th>Log loss ↓</th><th>H/D/A correct</th></tr></thead><tbody>${ranked.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.total}</td><td>${(r.correct/r.total*100).toFixed(1)}%</td><td>${r.brier.toFixed(4)}</td><td>${r.logLoss.toFixed(4)}</td><td>${r.classCorrect.H}/${r.actual.H} · ${r.classCorrect.D}/${r.actual.D} · ${r.classCorrect.A}/${r.actual.A}</td></tr>`).join("")}</tbody></table></div>`;
+ renderAnalysis();
 }
+function scoreParts(value){const m=String(value||"").match(/(\d+)\D+(\d+)/);return m?[+m[1],+m[2]]:null}
+function filteredAnalysisRows(){const t=state.lastTest;if(!t)return[];const val=id=>$(id).value;return t.records.filter(r=>(val("analysisConfidence")==="all"||r.confidence===+val("analysisConfidence"))&&(val("analysisRisk")==="all"||r.riskLevel===val("analysisRisk"))&&(val("analysisOutcome")==="all"||r.prediction===val("analysisOutcome"))&&(val("analysisWindow")==="all"||r.windowIndex===+val("analysisWindow"))&&(val("analysisWeight")==="all"||r.modelIndex===+val("analysisWeight"))&&(val("analysisLeague")==="all"||r.leagueId===val("analysisLeague"))&&(!+val("analysisDays")||Date.now()-new Date(r.date).getTime()<=+val("analysisDays")*86400000));}
+function renderAnalysis(){if(!state.lastTest)return;const conf=$("analysisConfidence"),league=$("analysisLeague");if(conf.options.length===1)for(let i=1;i<=10;i++)conf.add(new Option(`${i}/10`,String(i)));if(league.options.length===1)for(const [id,name] of Object.entries(LEAGUES))league.add(new Option(name,id));const rows=filteredAnalysisRows(),groups=Array.from({length:10},(_,i)=>{const group=rows.filter(r=>r.confidence===i+1);return{score:i+1,total:group.length,hits:group.filter(r=>r.prediction===r.actualOutcome).length}});
+ $("analysisResults").innerHTML=`<p class="muted smalltext">${rows.length} original chronological pre-match backtest records match filters. These are modelled historical forecasts, not previously saved live picks.</p><div class="tablewrap"><table><thead><tr><th>Confidence</th><th>Correct</th><th>Incorrect</th><th>Accuracy</th></tr></thead><tbody>${groups.map(g=>`<tr><td>${g.score}/10</td><td>${g.hits}</td><td>${g.total-g.hits}</td><td>${g.total?(100*g.hits/g.total).toFixed(1)+"%":"—"}</td></tr>`).join("")}</tbody></table></div><details><summary>Fixture-level hit list (${rows.length})</summary><div class="tablewrap"><table><thead><tr><th>Date / league</th><th>Fixture</th><th>Model</th><th>Confidence</th><th>Prediction</th><th>Actual</th><th>Hit?</th></tr></thead><tbody>${rows.slice(0,500).map(r=>`<tr><td>${esc(r.date.slice(0,10))}<br>${esc(r.league)}</td><td>${esc(r.home)} – ${esc(r.away)}</td><td>${WINDOW_SETS[r.windowIndex].join("/")} ${MODELS[r.modelIndex].short}</td><td>${r.confidence}</td><td>${r.prediction} (${esc(r.predictedScore)})</td><td>${r.actualOutcome} (${esc(r.actualScore)})</td><td>${r.prediction===r.actualOutcome?"✓":"✗"}</td></tr>`).join("")}</tbody></table></div>${rows.length>500?"Showing first 500; narrow filters for the remainder.":""}</details>`;
+ const exact=rows.filter(r=>r.predictedScore===r.actualScore),goalError=rows.map(r=>{const p=scoreParts(r.predictedScore),a=scoreParts(r.actualScore);return p&&a?{h:Math.abs(p[0]-a[0]),a:Math.abs(p[1]-a[1])}:null}).filter(Boolean),byScore=[...new Set(rows.map(r=>r.predictedScore))].sort();
+ $("exactResults").innerHTML=`<div class="panel"><div class="statgrid"><div class="stat"><span>Outcome hits</span><strong>${rows.filter(r=>r.prediction===r.actualOutcome).length}/${rows.length}</strong></div><div class="stat"><span>Exact-score hits</span><strong>${exact.length}/${rows.length}</strong></div><div class="stat"><span>Exact-score rate</span><strong>${rows.length?(exact.length/rows.length*100).toFixed(1)+"%":"—"}</strong></div><div class="stat"><span>Mean home / away goal error</span><strong>${goalError.length?(avg(goalError,x=>x.h,0).toFixed(2)+" / "+avg(goalError,x=>x.a,0).toFixed(2)):"—"}</strong></div></div><p class="muted smalltext">Mean combined absolute goal error: ${goalError.length?avg(goalError,x=>x.h+x.a,0).toFixed(2):"—"}. Filters above also apply to exact-score analysis.</p><div class="tablewrap"><table><thead><tr><th>Predicted score</th><th>Exact hits</th><th>Sample</th><th>Rate</th></tr></thead><tbody>${byScore.map(sc=>{const g=rows.filter(r=>r.predictedScore===sc),hits=g.filter(r=>r.actualScore===sc).length;return`<tr><td>${esc(sc)}</td><td>${hits}</td><td>${g.length}</td><td>${(100*hits/g.length).toFixed(1)}%</td></tr>`}).join("")}</tbody></table></div></div>`;
+}
+function readCalibration(){const num=id=>+$(id).value,points=[num("calProb"),num("calGoal"),num("calHist"),num("calSupport")];if(points.some(v=>!Number.isInteger(v)||v<1||v>10)||points.reduce((a,b)=>a+b,0)!==10)throw Error("The four point maxima must be integers between 1 and 10 totalling exactly 10.");const caps=[num("calGap1"),num("calGap15"),num("calGap2"),num("calGapExact")];if(caps.some(v=>!Number.isInteger(v)||v<1||v>10))throw Error("Goal-gap caps must be integers from 1 to 10.");if(caps[0]>caps[1]||caps[1]>caps[2])throw Error("Gap caps must not decrease as the gap increases below 2.00.");if(caps[3]>caps[2])throw Error("The exact-2.00 cap must not exceed the immediately preceding cap.");const mediumPenalty=num("calMedium"),highPenalty=num("calHigh"),historyTarget=num("calTarget"),lowSampleCap=num("calLowCap");if(![mediumPenalty,highPenalty,historyTarget,lowSampleCap].every(Number.isInteger)||mediumPenalty<0||highPenalty<mediumPenalty||highPenalty>10||historyTarget<1||historyTarget>40||lowSampleCap<1||lowSampleCap>10)throw Error("Invalid risk, history or sample-cap configuration.");return{...state.confidenceConfig,points,mediumPenalty,highPenalty,historyTarget,lowSampleCap,gapCaps:[{under:1,cap:caps[0]},{under:1.5,cap:caps[1]},{under:2,cap:caps[2]},{under:2.000000001,cap:caps[3]}]};}
+function calibrationScore(r,cfg){const b=r.confidenceBreakdown||{},p=cfg.points,raw=clamp(clamp((b.probabilityGap||0)/.4,0,1)*p[0]+(b.differenceStrength||0)*p[1]+clamp((b.minTeamSample||0)/cfg.historyTarget,0,1)*p[2]+clamp((b.supportBonus||0)/(b.pointMaxima?.[3]||1),0,1)*p[3]-(r.riskLevel==="high"?cfg.highPenalty:r.riskLevel==="medium"?cfg.mediumPenalty:0),0,10);let cap=(b.minTeamSample||0)<cfg.lowSampleThreshold?cfg.lowSampleCap:(b.minTeamSample||0)<cfg.midSampleThreshold?cfg.midSampleCap:10;if(r.prediction!=="D"){const rule=cfg.gapCaps.find(v=>r.goalGap<v.under);cap=Math.min(cap,rule?.cap??10);if(b.strongWinEvidence===false)cap=Math.min(cap,8);else if(b.exceptionalWinEvidence===false)cap=Math.min(cap,9);}return Math.max(1,Math.min(Math.round(raw),cap));}
+function evaluateCalibration(){try{const cfg=readCalibration();if(!state.lastTest?.records?.length)throw Error("Run Model Test first.");const rows=state.lastTest.records,score=(fn)=>{const groups=new Map();for(const r of rows){const c=fn(r),g=groups.get(c)||{total:0,hits:0};g.total++;if(r.prediction===r.actualOutcome)g.hits++;groups.set(c,g)}return [...groups].map(([c,g])=>({c,...g}));},current=score(r=>r.confidence),experiment=score(r=>calibrationScore(r,cfg));const spread=g=>g.filter(x=>x.total>=10).map(x=>`${x.c}/10: ${(x.hits/x.total*100).toFixed(1)}% (${x.total})`).join(" · ")||"Insufficient samples";$("calResults").textContent=`Existing: ${spread(current)}. Experimental: ${spread(experiment)}. These are outcome hit rates, not calibrated probabilities. The experiment is not active.`;}catch(e){$("calResults").textContent=e.message}}
+function applyCalibration(){try{const cfg=readCalibration();state.confidenceConfig=cfg;store("fp_confidence_settings",cfg);$("confProb").value=cfg.points[0];$("confGoal").value=cfg.points[1];$("confHist").value=cfg.points[2];$("confSupport").value=cfg.points[3];$("confMedium").value=cfg.mediumPenalty;$("confHigh").value=cfg.highPenalty;$("calResults").textContent="Applied to active Settings. Reload predictions to recalculate; saved pre-match snapshots remain unchanged.";}catch(e){$("calResults").textContent=e.message}}
 function updateModelBanner(){
- const model=MODELS[state.activeIndex];$("activeModel").textContent=`Option ${model.short} — ${model.name.split("—")[1].trim()}`;$("modelModeBadge").textContent=state.mode==="auto"?"Auto":"Manual";
+ const model=MODELS[state.activeIndex];$("activeModel").textContent=`Option ${model.short} — ${model.name.split("—")[1].trim()} · ${WINDOW_SETS[state.activeWindow].join("/")}`;$("modelModeBadge").textContent=state.mode==="auto"?"Auto":"Manual";
  $("activeModelNote").textContent=state.mode==="auto"?(state.lastTest?`Auto selected by holdout Brier score. Minimum sample: ${state.minSample}.`:"Auto will test models when you load predictions."):"Using your manually selected model.";
 }
 function loadSettings(){
  const s=readStore("fp_settings",{mode:"manual",manualIndex:1,minSample:100});
- state.mode=s.mode==="auto"?"auto":"manual";state.manualIndex=clamp(Number(s.manualIndex)||0,0,3);state.minSample=Number(s.minSample)||100;
- $("modeManual").checked=state.mode==="manual";$("modeAuto").checked=state.mode==="auto";$("modelChoice").value=state.manualIndex;$("minSample").value=String(state.minSample);
+ state.mode=s.mode==="auto"?"auto":"manual";state.manualIndex=clamp(Number(s.manualIndex)||0,0,3);state.manualWindow=clamp(Number(s.manualWindow)||0,0,2);state.activeWindow=state.manualWindow;state.minSample=Number(s.minSample)||100;state.confidenceConfig={...DEFAULT_CONF,...readStore("fp_confidence_settings",{})};
+ $("modeManual").checked=state.mode==="manual";$("modeAuto").checked=state.mode==="auto";$("modelChoice").value=state.manualIndex;$("windowChoice").value=state.manualWindow;$("minSample").value=String(state.minSample);for(const [id,v] of [["confProb",state.confidenceConfig.points[0]],["confGoal",state.confidenceConfig.points[1]],["confHist",state.confidenceConfig.points[2]],["confSupport",state.confidenceConfig.points[3]],["confMedium",state.confidenceConfig.mediumPenalty],["confHigh",state.confidenceConfig.highPenalty]])$(id).value=v;
  state.activeIndex=state.manualIndex;updateModelBanner();
 }
 function saveSettings(){
- state.mode=$("modeAuto").checked?"auto":"manual";state.manualIndex=+$("modelChoice").value;state.minSample=+$("minSample").value;
- store("fp_settings",{mode:state.mode,manualIndex:state.manualIndex,minSample:state.minSample});
- if(state.mode==="manual"){state.activeIndex=state.manualIndex;if(state.matches.length){updatePredictions(state.matches,state.activeIndex);snapshotPredictions(state.matches);renderFixtures()}}
- else if(state.lastTest){const b=bestTestModel(state.lastTest);state.activeIndex=b?MODELS.findIndex(m=>m.short===b.short):state.manualIndex;if(state.matches.length){updatePredictions(state.matches,state.activeIndex);renderFixtures()}}
+ const pts=["confProb","confGoal","confHist","confSupport"].map(id=>+$(id).value);if(pts.some(x=>!Number.isInteger(x)||x<1||x>10)||pts.reduce((a,b)=>a+b,0)!==10){$("settingsStatus").textContent="Cannot save: confidence maxima must be integers from 1 to 10 totalling exactly 10.";return;}
+ const medium=+$("confMedium").value,high=+$("confHigh").value;if(!Number.isInteger(medium)||!Number.isInteger(high)||medium<0||high<medium||high>10){$("settingsStatus").textContent="Cannot save: risk deductions must be whole numbers, with high ≥ medium and both between 0 and 10.";return;}
+ state.confidenceConfig={...state.confidenceConfig,points:pts,mediumPenalty:medium,highPenalty:high};store("fp_confidence_settings",state.confidenceConfig);
+ state.mode=$("modeAuto").checked?"auto":"manual";state.manualIndex=+$("modelChoice").value;state.manualWindow=+$("windowChoice").value;state.minSample=+$("minSample").value;
+ store("fp_settings",{mode:state.mode,manualIndex:state.manualIndex,manualWindow:state.manualWindow,minSample:state.minSample});
+ if(state.mode==="manual"){state.activeIndex=state.manualIndex;state.activeWindow=state.manualWindow;if(state.matches.length){updatePredictions(state.matches,state.activeIndex);snapshotPredictions(state.matches);renderFixtures()}}
+ else if(state.lastTest){const b=bestTestModel(state.lastTest);state.activeIndex=b?b.modelIndex:state.manualIndex;state.activeWindow=b?b.windowIndex:state.manualWindow;if(state.matches.length){updatePredictions(state.matches,state.activeIndex);renderFixtures()}}
  updateModelBanner();$("settingsStatus").textContent=state.mode==="auto"?"Settings saved. Auto will use the best eligible Brier score on the next test.":"Settings saved. Displayed predicted scores will now be consistent with the selected model.";
 }
 function setBusy(title,percent){$("busy").classList.add("show");$("busyTitle").textContent=title;$("busyBar").style.width=percent+"%";$("busyPercent").textContent=percent+"%"}
@@ -1003,8 +1030,8 @@ async function loadData(){
   const result=await fetchAllLeagues(6,(i,n,name)=>setBusy("Loading "+name+"…",Math.round(5+i/n*45)));
   if(!result.matches.length)throw Error("No matches were returned by the data provider.");
   state.matches=result.matches;state.lastTest=null;
-  if(state.mode==="auto"){setBusy("Testing historical models…",55);const t=await fetchAllLeagues(12);if(t.matches.length){state.lastTest=runBacktest(t.matches);const b=bestTestModel(state.lastTest);state.activeIndex=b?MODELS.findIndex(m=>m.short===b.short):state.manualIndex}else state.activeIndex=state.manualIndex}
-  else state.activeIndex=state.manualIndex;
+  if(state.mode==="auto"){setBusy("Testing historical models…",55);const t=await fetchAllLeagues(24);if(t.matches.length){state.lastTest=runBacktest(t.matches);const b=bestTestModel(state.lastTest);state.activeIndex=b?b.modelIndex:state.manualIndex;state.activeWindow=b?b.windowIndex:state.manualWindow}else {state.activeIndex=state.manualIndex;state.activeWindow=state.manualWindow;}}
+  else {state.activeIndex=state.manualIndex;state.activeWindow=state.manualWindow;}
   setBusy("Calculating predictions…",78);updatePredictions(state.matches,state.activeIndex);state.loaded=true;updateModelBanner();
   if(state.mode==="auto"&&state.lastTest){const b=bestTestModel(state.lastTest);$("activeModelNote").textContent=b?`Auto selected ${b.name} using Brier score ${b.brier.toFixed(4)} on ${b.total} holdout matches.`:`Not enough test matches for Auto; using manual fallback, Option ${MODELS[state.manualIndex].short}.`}
   setBusy("Saving prediction snapshots…",92);const added=snapshotPredictions(state.matches);$("connection").textContent="Data loaded";
@@ -1020,13 +1047,13 @@ async function refreshHistoryScoresFromLoaded(){
  store("fp_prediction_history",state.history);renderHistory();
 }
 async function doTest(){
- if(state.loading)return;state.loading=true;$("runTest").disabled=true;setBusy("Fetching historical results…",5);$("testStatus").textContent="Fetching up to 12 months of results. Please wait.";
+ if(state.loading)return;state.loading=true;$("runTest").disabled=true;setBusy("Fetching historical results…",5);$("testStatus").textContent="Fetching up to 24 months of results. Please wait.";
  try{
   const r=await fetchAllLeagues(12,(i,n,name)=>setBusy("Loading test data: "+name,Math.round(5+i/n*65)));
   if(!r.matches.length)throw Error("No historical matches were returned.");
   setBusy("Running chronological model test…",78);await new Promise(r=>setTimeout(r,20));state.lastTest=runBacktest(r.matches);renderTest(state.lastTest);
   $("testStatus").textContent=`Test completed on ${r.matches.length} retrieved matches.`+`${r.errors.length?" Unavailable: "+r.errors.join(", "):""}`;
-  if(state.mode==="auto"){const b=bestTestModel(state.lastTest);if(b){state.activeIndex=MODELS.findIndex(m=>m.short===b.short);updateModelBanner();$("activeModelNote").textContent=`Latest holdout winner: ${b.name}, Brier ${b.brier.toFixed(4)}. Reload predictions to apply it.`}}
+  if(state.mode==="auto"){const b=bestTestModel(state.lastTest);if(b){state.activeIndex=b.modelIndex;state.activeWindow=b.windowIndex;updateModelBanner();$("activeModelNote").textContent=`Latest holdout winner: ${b.name}, Brier ${b.brier.toFixed(4)}. Reload predictions to apply it.`}}
   setBusy("Test complete",100);await new Promise(r=>setTimeout(r,250));hideBusy();
  }catch(e){hideBusy();$("testStatus").innerHTML=`<span class="error">Test failed: ${esc(e.message)}</span>`}
  finally{state.loading=false;$("runTest").disabled=false}
@@ -1489,7 +1516,7 @@ function renderWeeklyTop6(){
  for(const [position,{m}] of rows.entries()){
   const id=eventId(m),old=state.weeklyPicks.find(x=>x.id===id);
   if(!old&&new Date(m.date).getTime()>now){
-   state.weeklyPicks.push({id,weekKey:weeklyWeekKey(m.date),pickPosition:position+1,leagueId:m.leagueId,league:m.league,home:m.home,away:m.away,date:m.date,prediction:m.prediction,confidence:m.confidence,confidenceBreakdown:m.confidenceBreakdown,probs:{...m.probs},predictedScore:m.predictedScore,homeLambda:m.homeLambda,awayLambda:m.awayLambda,expectedGoalBreakdown:m.expectedGoalBreakdown,riskLevel:m.risk?.level||"low",riskFlags:(m.risk?.flags||[]).map(f=>f.text),supportFlags:(m.risk?.supportFlags||[]).map(f=>f.text),modelIndex:state.activeIndex,savedAt:new Date().toISOString()});
+   state.weeklyPicks.push({id,weekKey:weeklyWeekKey(m.date),pickPosition:position+1,leagueId:m.leagueId,league:m.league,home:m.home,away:m.away,date:m.date,prediction:m.prediction,confidence:m.confidence,confidenceBreakdown:m.confidenceBreakdown,probs:{...m.probs},predictedScore:m.predictedScore,homeLambda:m.homeLambda,awayLambda:m.awayLambda,expectedGoalBreakdown:m.expectedGoalBreakdown,riskLevel:m.risk?.level||"low",riskFlags:(m.risk?.flags||[]).map(f=>f.text),supportFlags:(m.risk?.supportFlags||[]).map(f=>f.text),modelIndex:state.activeIndex,windowIndex:state.activeWindow,savedAt:new Date().toISOString()});
   }
  }
  const currentById=new Map(state.matches.map(m=>[eventId(m),m]));
@@ -1619,7 +1646,7 @@ $("goalThreats").addEventListener("click",()=>{state.goalThreatMode=!state.goalT
 $("clearAcc").addEventListener("click",()=>{if(confirm("Clear all accumulator selections?")){state.acc=[];store("fp_acc",state.acc);renderAccumulator();renderFixtures()}});
 $("historyDays").addEventListener("change",renderHistory);$("historyLeague").addEventListener("change",renderHistory);$("refreshHistory").addEventListener("click",()=>{if(!state.loading)loadData()});
 $("clearPredictionHistory").addEventListener("click",()=>{if(confirm("Reset all saved pre-match predictions and their accuracy history on this browser? This cannot be undone. Completed match data and Live Centre tracking will remain.")){state.history=[];try{localStorage.removeItem("fp_prediction_history")}catch{}renderHistory();}});
-$("saveSettings").addEventListener("click",saveSettings);$("runTest").addEventListener("click",doTest);
+$("calTest").addEventListener("click",evaluateCalibration);$("calApply").addEventListener("click",applyCalibration);$("analysisRefresh").addEventListener("click",renderAnalysis);$("saveSettings").addEventListener("click",saveSettings);$("runTest").addEventListener("click",doTest);
 $("liveRefresh").addEventListener("click",()=>{fetchLive();fetchLiveSchedule()});
  $("refreshWeekly").addEventListener("click",renderWeeklyTop6);
  $("liveStatusFilter").addEventListener("change",e=>{state.liveScheduleFilter=e.target.value;renderLive()});
