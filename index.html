@@ -248,6 +248,25 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
  .analytics-grid{grid-template-columns:1fr 1fr}
  .analytics-card.full{grid-column:1/-1}
 }
+
+/* Unified confidence system: each category owns its icon, text, border and surface. */
+.confidence-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:9px;border:1px solid transparent;font-size:11px;font-weight:800;line-height:1.2;white-space:nowrap;font-variant-numeric:tabular-nums;letter-spacing:.015em}
+.confidence-pill .confidence-icon{width:10px;height:10px;flex:0 0 10px;border-radius:50%;background:currentColor;font-size:13px;line-height:10px;text-align:center}
+.confidence-pill.confidence-star{color:#ffe4a1;background:linear-gradient(115deg,#3b3019,#66501e);border-color:#e4b64d;box-shadow:inset 0 1px 0 #ffe4a122}
+.confidence-pill.confidence-star .confidence-icon{background:none;color:#ffe08a;font-size:16px}
+.confidence-pill.confidence-high{color:#b3f7d1;background:#123c2c;border-color:#36ad76}
+.confidence-pill.confidence-medium{color:#ffe0a0;background:#473015;border-color:#d79b3b}
+.confidence-pill.confidence-low{color:#ffc2c7;background:#49232c;border-color:#b95565}
+.confidence-pill .confidence-label{font-size:10px;letter-spacing:.06em}
+.selection-group{display:inline-flex;flex-direction:column;gap:3px;max-width:100%;min-width:0}
+.selection-pill{display:inline-block;width:fit-content;padding:6px 9px;border-radius:8px;font-size:11px;font-weight:900;letter-spacing:.035em;border:1px solid transparent}
+.selection-yes{background:#123c2c;border-color:#36ad76;color:#b3f7d1}
+.selection-none{background:#29364a;border-color:#627187;color:#d3deed}
+.selection-reason{font-size:10px;color:var(--muted);white-space:normal;line-height:1.4}
+.prediction-pill{display:inline-block;background:#23354d;color:#dce9fa;border:1px solid #4a6686;border-radius:8px;padding:6px 9px;font-size:11px;line-height:1.4}
+.prediction-soft{color:#9bb7d8;font-size:10px}
+.confidence-legend{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+@media(max-width:520px){.confidence-pill{padding:5px 7px;gap:4px}.confidence-pill .confidence-label{font-size:9px}.selection-group{flex-basis:100%}}
 </style>
 </head>
 <body>
@@ -293,7 +312,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
  <div class="row wrap" style="margin-bottom:12px"><button class="btn" id="load">Load / refresh predictions</button><button class="btn secondary" id="top10">Show Top 10 picks</button><button class="btn secondary" id="goalThreats">Show Goal Threats</button></div>
  <div class="notice">Predictions use earlier completed league results, opponent-adjusted form and team-specific home/away form. Risk alerts are directional: only recent-form evidence that contradicts the predicted outcome lowers confidence; evidence that supports the pick can strengthen confidence. Historical shots and xG are not consistently available in the current feed. Expected goals are averages, not exact-score guarantees. The displayed score drives the predicted outcome under the 0.5 goal-gap rule. Confidence is an indicative rating, not a guarantee.</div>
  <div class="confidence-legend">
-  <span class="tag confidence-star">⭐ Confidence 9–10</span><span class="tag confidence-high">🟢 Confidence 7–8</span><span class="tag confidence-low">🟠 Confidence 5–6</span><span class="tag confidence-low">🔴 Confidence 1–4</span>
+  <span class="tag confidence-star">★ Confidence 9–10</span><span class="tag confidence-high">Confidence 7–8</span><span class="tag confidence-medium">Confidence 5–6</span><span class="tag confidence-low">Confidence 1–4</span>
  </div>
  <div id="topbox"></div><div id="goalThreatBox"></div><div id="fixtureStatus" class="muted smalltext"></div><div id="fixtureList"><div class="empty">Tap “Load / refresh predictions” to begin.</div></div>
 </section>
@@ -428,7 +447,19 @@ const WINDOWS=[15,10,5],$=id=>document.getElementById(id);
 function gapOutcome(diff,homeGap=.5,awayGap=.5){return diff>=homeGap?"H":diff<=-awayGap?"A":"D"}
 function mostProbableOutcome(p){return p.H>=p.D&&p.H>=p.A?"H":p.A>=p.D&&p.A>=p.H?"A":"D"}
 function recommendedSelection(diff,prediction,homeGap=state.homeGap,awayGap=state.awayGap){const candidate=gapOutcome(diff,homeGap,awayGap);return candidate!=="D"&&candidate===prediction?candidate:"N"}
-function selectionBadge(m){const choice=m.selection??recommendedSelection(m.xgDifference??((m.homeLambda??0)-(m.awayLambda??0)),m.prediction);return `<span class="tag ${choice==="N"?"":"good"}">Selection: ${choice==="N"?"No Selection":outcomeName(choice)}</span>`}
+function selectionBadge(m){
+ const diff=Number.isFinite(Number(m.xgDifference))?Number(m.xgDifference):Number(m.homeLambda??0)-Number(m.awayLambda??0);
+ const choice=m.selection??recommendedSelection(diff,m.prediction);
+ const needed=choice==="H"?state.homeGap:choice==="A"?state.awayGap:m.prediction==="A"?state.awayGap:m.prediction==="H"?state.homeGap:null;
+ const advantage=m.prediction==="A"?-diff:m.prediction==="H"?diff:Math.abs(diff);
+ const reason=choice==="N"?(m.prediction==="D"?"Draw forecast — no qualifying winner selection":`xG advantage ${Math.max(0,advantage).toFixed(3)} · required ${Number(needed).toFixed(3)}`):`xG advantage ${Math.abs(diff).toFixed(3)} · required ${Number(needed).toFixed(3)}`;
+ return `<span class="selection-group"><span class="selection-pill ${choice==="N"?"selection-none":"selection-yes"}">${choice==="N"?"NO SELECTION":`RECOMMENDED · ${outcomeName(choice).toUpperCase()}`}</span><span class="selection-reason">${esc(reason)}</span></span>`;
+}
+function predictionBadge(m){
+ const diff=Number(m.xgDifference??(Number(m.homeLambda??0)-Number(m.awayLambda??0)));
+ const narrow=(m.prediction==="H"||m.prediction==="A")&&Math.abs(diff)<(m.prediction==="H"?state.homeGap:state.awayGap);
+ return `<span class="prediction-pill">Predicted outcome: <strong>${esc(outcomeName(m.prediction))}</strong>${narrow?` <span class="prediction-soft">· slight xG advantage</span>`:""}</span>`;
+}
 
 const state={
  matches:[],loaded:false,loading:false,topMode:false,goalThreatMode:false,
@@ -442,7 +473,7 @@ function store(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function clamp(n,a,b){return Math.max(a,Math.min(b,n))}
 function confidenceClass(score){const n=Number(score);if(score===null||score===undefined||!Number.isFinite(n))return "";if(n>=9)return "confidence-star";if(n>=7)return "confidence-high";if(n>=5)return "confidence-medium";return "confidence-low"}
-function confidenceBadge(score){const n=Number(score);if(score===null||score===undefined||!Number.isFinite(n))return `<span class="tag">Confidence unavailable</span>`;return `<span class="tag ${confidenceClass(n)}">${n>=9?"⭐ ":""}${n}/10 confidence</span>`}
+function confidenceBadge(score){const n=Number(score);if(score===null||score===undefined||!Number.isFinite(n))return `<span class="tag">Confidence unavailable</span>`;const label=n>=9?"EXCEPTIONAL":n>=7?"STRONG":n>=5?"MODERATE":"LOW";return `<span class="confidence-pill ${confidenceClass(n)}" aria-label="Confidence ${n} out of 10, ${label.toLowerCase()}"><span class="confidence-icon" aria-hidden="true">${n>=9?"★":""}</span><strong>${n}/10</strong><span class="confidence-label">${label}</span></span>`}
 function fmtDate(d){return new Date(d).toLocaleString(undefined,{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
 function eventId(m){return `${m.leagueId}_${m.id}`}
 function getOutcome(h,a){return h>a?"H":h<a?"A":"D"}
@@ -882,14 +913,14 @@ function renderRiskSummary(list){
  const root=$("riskSummary");if(!root)return;
  const flagged=list.filter(m=>m.risk&&m.risk.level!=="low").sort((a,b)=>(b.risk.level==="high")-(a.risk.level==="high")||b.risk.score-a.risk.score).slice(0,5);
  if(!flagged.length){root.innerHTML="";return;}
- root.innerHTML=`<div class="panel"><div class="row between wrap"><h3 style="margin:0">⚠️ Risk &amp; Form Alerts</h3><span class="tag">${list.filter(m=>m.risk?.level==="high").length} high risk · ${list.filter(m=>m.risk?.level==="medium").length} warnings</span></div><p class="muted smalltext" style="margin:6px 0 10px">Matches where recent league results suggest the model may not have fully caught up with a form change.</p>${flagged.map(m=>`<div class="row between wrap" style="padding:8px 0;border-top:1px solid var(--border);gap:8px"><div class="grow"><strong>${esc(m.home)} vs ${esc(m.away)}</strong><div class="muted smalltext">${esc(m.league)} · ${esc(fmtDate(m.date))} · ${m.risk.flags.length?esc(m.risk.flags[0].text):"Recent form warning"}</div></div>${riskBadgeHtml(m.risk)}<span class="tag">${m.confidence}/10</span></div>`).join("")}</div>`;
+ root.innerHTML=`<div class="panel"><div class="row between wrap"><h3 style="margin:0">⚠️ Risk &amp; Form Alerts</h3><span class="tag">${list.filter(m=>m.risk?.level==="high").length} high risk · ${list.filter(m=>m.risk?.level==="medium").length} warnings</span></div><p class="muted smalltext" style="margin:6px 0 10px">Matches where recent league results suggest the model may not have fully caught up with a form change.</p>${flagged.map(m=>`<div class="row between wrap" style="padding:8px 0;border-top:1px solid var(--border);gap:8px"><div class="grow"><strong>${esc(m.home)} vs ${esc(m.away)}</strong><div class="muted smalltext">${esc(m.league)} · ${esc(fmtDate(m.date))} · ${m.risk.flags.length?esc(m.risk.flags[0].text):"Recent form warning"}</div></div>${riskBadgeHtml(m.risk)}${confidenceBadge(m.confidence)}</div>`).join("")}</div>`;
 }
 function matchCard(m){
  const id=eventId(m),added=state.acc.some(x=>x.id===id),shownScore=isFinished(m)?resultString(m):m.predictedScore;
  return`<article class="match"><div class="row between"><span class="league">${esc(m.league)}</span><div class="row wrap">${confidenceBadge(m.confidence)}${riskBadgeHtml(m.risk)}${Math.min(m.h?.count??0,m.a?.count??0)<5?`<span class="tag confidence-low" title="At least one team has fewer than five prior completed matches">Limited sample</span>`:""}</div></div>
  <div class="meta" style="margin:7px 0">${esc(fmtDate(m.date))}${m.venue?" · "+esc(m.venue):""}</div>
  <div class="row between"><div class="grow teamline">${esc(m.home)}<div class="meta">${m.h.count} prior league matches</div></div><strong style="white-space:nowrap;font-size:19px">${shownScore}</strong><div class="grow teamline" style="text-align:right">${esc(m.away)}<div class="meta">${m.a.count} prior league matches</div></div></div>
- ${probsHtml(m)}<div class="row between wrap"><span class="tag">Prediction: ${outcomeName(m.prediction)}</span>${selectionBadge(m)}<button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(id)}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>${riskDetailsHtml(m)}${explainHtml(m)}</article>`;
+ ${probsHtml(m)}<div class="row between wrap">${predictionBadge(m)}${selectionBadge(m)}<button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(id)}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>${riskDetailsHtml(m)}${explainHtml(m)}</article>`;
 }
 function upcoming(){
  const now=new Date(),v=$("days").value,league=$("league").value,todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
@@ -911,7 +942,7 @@ function renderFixtures(){
 }
 function renderTop10(){
  const all=upcoming().sort((a,b)=>b.probs[b.prediction]-a.probs[a.prediction]).slice(0,10);
- $("topbox").innerHTML=`<h2>Top 10 picks</h2><p class="muted smalltext">Ranked by the probability of the model's leading outcome. The separate Selection badge shows whether the winner passes the optimised xG threshold; confidence is not a guarantee.</p><div class="confidence-legend"><span class="tag confidence-star">⭐ 9–10</span><span class="tag confidence-high">🟢 7–8</span><span class="tag confidence-medium">🟠 5–6</span><span class="tag confidence-low">🔴 1–4</span></div>`+all.map((m,i)=>{const added=state.acc.some(x=>x.id===eventId(m));return`<div class="pick"><div class="top-pick-header"><strong class="top-pick-teams">${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong><div class="top-pick-confidence">${confidenceBadge(m.confidence)}</div></div><div class="meta" style="margin-top:6px">${esc(m.league)} · ${esc(fmtDate(m.date))}</div><div class="row wrap" style="margin:10px 0"><span class="tag">Prediction: ${outcomeName(m.prediction)}</span>${selectionBadge(m)}<span class="tag">${Math.round(m.probs[m.prediction]*100)}% probability</span>${riskBadgeHtml(m.risk)}</div><div class="meta" style="margin-bottom:9px">Predicted score: ${esc(m.predictedScore)}${m.risk?.flags?.length?` · Risk: ${esc(m.risk.flags[0].text)}`:""}</div><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(eventId(m))}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>`}).join("")||`<div class="empty">No upcoming matches found.</div>`;
+ $("topbox").innerHTML=`<h2>Top 10 picks</h2><p class="muted smalltext">Ranked by the probability of the model's leading outcome. Predicted outcome shows the likely result; a separate selection requires the optimised xG gap. Confidence is not a guarantee.</p><div class="confidence-legend"><span class="tag confidence-star">★ 9–10</span><span class="tag confidence-high">7–8</span><span class="tag confidence-medium">5–6</span><span class="tag confidence-low">1–4</span></div>`+all.map((m,i)=>{const added=state.acc.some(x=>x.id===eventId(m));return`<div class="pick"><div class="top-pick-header"><strong class="top-pick-teams">${i+1}. ${esc(m.home)} vs ${esc(m.away)}</strong><div class="top-pick-confidence">${confidenceBadge(m.confidence)}</div></div><div class="meta" style="margin-top:6px">${esc(m.league)} · ${esc(fmtDate(m.date))}</div><div class="row wrap" style="margin:10px 0">${predictionBadge(m)}${selectionBadge(m)}<span class="tag">${Math.round(m.probs[m.prediction]*100)}% probability</span>${riskBadgeHtml(m.risk)}</div><div class="meta" style="margin-bottom:9px">Predicted score: ${esc(m.predictedScore)}${m.risk?.flags?.length?` · Risk: ${esc(m.risk.flags[0].text)}`:""}</div><button class="btn small ${added?"added":""}" ${added?"disabled":""} onclick="addToAccumulator('${esc(eventId(m))}','${m.prediction}')">${added?"✓ Added":"Add pick"}</button></div>`}).join("")||`<div class="empty">No upcoming matches found.</div>`;
 }
 function goalCountProbability(lambda, minimumGoals){
  let below=0;
@@ -1708,7 +1739,7 @@ function renderWeeklyTop6(){
  <div class="stat"><span class="muted smalltext">Correct picks</span><strong>${correctPicks.length} / ${settledPicks.length}</strong><span class="muted smalltext">Settled selections only</span></div>
  </div><p class="muted smalltext" style="margin:8px 2px 0">Current week: ${shown}/6 credible selections. Weeks with fewer than six saved picks are excluded from the all-six accumulator rate. Pending or incomplete matches are excluded from settled rates.</p>`;
  if(!rows.length){root.innerHTML=`<div class="empty">${state.matches.length?"No Saturday 3:00 pm English-league fixtures currently meet the minimum selection standard. This list will not force weak picks.":"Load / refresh predictions on the Fixtures tab, then return here."}</div>`}
- else root.innerHTML=rows.map(({m,pick,risk},i)=>`<article class="match"><div class="row between wrap"><span class="league">#${i+1} · ${esc(m.league)}</span><div class="row wrap">${confidenceBadge(m.confidence)}<span class="tag">${Math.round(pick*100)}% ${outcomeName(m.prediction)}</span>${selectionBadge(m)}</div></div><div class="meta">${esc(weeklyWeekLabel(m.date))} · Model ${MODELS[state.activeIndex]?.short||"B"}</div><div class="row between" style="margin-top:7px"><strong class="grow">${esc(m.home)}</strong><strong>${esc(m.predictedScore||"—")}</strong><strong class="grow" style="text-align:right">${esc(m.away)}</strong></div><div class="meta">Expected goals: ${Number(m.homeLambda).toFixed(2)} – ${Number(m.awayLambda).toFixed(2)} · Risk: ${esc(risk)}</div>${probsHtml(m)}<div class="notice"><strong>Why it ranked</strong><br>${esc(outcomeName(m.prediction))} is the model's top outcome at ${Math.round(pick*100)}%, with confidence ${m.confidence}/10. Ranking also considers supporting evidence and contradictory-form risks.</div><details><summary>Full prediction details and evidence</summary>${insidePredictionHtml(m)}</details></article>`).join("");
+ else root.innerHTML=rows.map(({m,pick,risk},i)=>`<article class="match"><div class="row between wrap"><span class="league">#${i+1} · ${esc(m.league)}</span><div class="row wrap">${confidenceBadge(m.confidence)}<span class="tag">${Math.round(pick*100)}% probability</span>${predictionBadge(m)}${selectionBadge(m)}</div></div><div class="meta">${esc(weeklyWeekLabel(m.date))} · Model ${MODELS[state.activeIndex]?.short||"B"}</div><div class="row between" style="margin-top:7px"><strong class="grow">${esc(m.home)}</strong><strong>${esc(m.predictedScore||"—")}</strong><strong class="grow" style="text-align:right">${esc(m.away)}</strong></div><div class="meta">Expected goals: ${Number(m.homeLambda).toFixed(2)} – ${Number(m.awayLambda).toFixed(2)} · Risk: ${esc(risk)}</div>${probsHtml(m)}<div class="notice"><strong>Why it ranked</strong><br>${esc(outcomeName(m.prediction))} is the model's top outcome at ${Math.round(pick*100)}%, with confidence ${m.confidence}/10. Ranking also considers supporting evidence and contradictory-form risks.</div><details><summary>Full prediction details and evidence</summary>${insidePredictionHtml(m)}</details></article>`).join("");
  const tracked=settledPicks;
  const positionRows=Array.from({length:6},(_,i)=>{
   const position=i+1,group=tracked.filter(x=>Number(x.pickPosition)===position),hits=group.filter(x=>x.actualOutcome===x.prediction).length;
