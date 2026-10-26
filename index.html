@@ -457,7 +457,6 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
 </section>
 
 <section id="settings" hidden>
- <details class="panel"><summary><strong>Competition coverage audit · optional leagues</strong></summary><p class="muted smalltext">Check the eight proposed competitions before enabling them. ESPN fixtures and historical score availability are inspected; shots and shots-on-target coverage cannot be certified from scoreboard responses alone. New leagues remain disabled until you explicitly enable them.</p><button id="auditCandidateLeagues" class="btn secondary small" type="button">Check candidate league coverage</button><div id="candidateAuditResults" class="tablewrap muted smalltext" style="margin-top:12px">Not checked yet.</div></details>
  <h2>Prediction Settings</h2><div class="panel"><div class="notice"><strong>Active prediction display</strong><p class="muted smalltext">Both engines calculate and save independent pre-match predictions even when only one is displayed.</p><select id="activePredictionView"><option value="both">Both approaches — compare predictions</option><option value="original">League-adjusted (Poisson) only</option><option value="updated">Team-form (goal difference) only</option></select></div>
 <details class="panel" open><summary><strong>League-adjusted / Poisson — settings</strong></summary><p class="muted smalltext">Original 1.6 league-adjusted expected-goals engine and outcome logic. Its form windows, selection gaps and confidence multiplier are independent of the updated engine.</p><div class="controls"><div><label>Form weighting</label><select id="originalModelChoice"><option value="0">A — Stable</option><option value="1">B — Balanced</option><option value="2">C — Recent</option><option value="3">D — Very recent</option></select></div><div><label>Form windows</label><select id="originalWindowChoice"><option value="0">15 / 10 / 5</option><option value="1">10 / 6 / 3</option><option value="2">8 / 5 / 3</option></select></div><div><label>HOME SELECT goal advantage</label><input id="originalHomeGap" type="number" min="0.05" max="2" step="0.05" value="0.5"></div><div><label>AWAY SELECT goal advantage</label><input id="originalAwayGap" type="number" min="0.05" max="2" step="0.05" value="0.5"></div><div><label>Confidence 10 multiplier</label><select id="originalConfidenceMultiplier"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option><option value="5">5×</option></select></div></div><p class="muted smalltext">Save Settings below activates changes. Existing frozen predictions will not be rewritten.</p></details><h3>Team-form / Goal difference — settings</h3>
   <h3>How should the model be selected?</h3>
@@ -494,16 +493,11 @@ const LEAGUES={
  "ned.1":"Eredivisie","por.1":"Primeira Liga","ger.2":"2. Bundesliga","bel.1":"Belgian Pro League",
  "tur.1":"Turkish Süper Lig","aut.1":"Austrian Bundesliga","sco.1":"Scottish Premiership","ita.2":"Italian Serie B",
  "usa.1":"Major League Soccer","bra.1":"Brazilian Série A","mex.1":"Liga MX",
- "uefa.champions":"Champions League","uefa.europa":"Europa League"
-};
-const CANDIDATE_LEAGUES={
+ "uefa.champions":"Champions League","uefa.europa":"Europa League",
  "esp.2":"La Liga 2","fra.2":"Ligue 2","den.1":"Danish Superliga",
  "nor.1":"Norwegian Eliteserien","swe.1":"Swedish Allsvenskan",
  "gre.1":"Greek Super League","sco.2":"Scottish Championship","ned.2":"Dutch Eerste Divisie"
 };
-const APPROVED_EXTRA_KEY="fp_approved_extra_leagues";
-function approvedExtraLeagues(){const stored=readStore(APPROVED_EXTRA_KEY,[]);return Array.isArray(stored)?stored.filter(id=>Object.hasOwn(CANDIDATE_LEAGUES,id)):[]}
-function activateApprovedLeagues(){for(const id of approvedExtraLeagues())LEAGUES[id]=CANDIDATE_LEAGUES[id]}
 // Populate both competition filters from one shared list so they cannot drift apart.
 function initLeagueSelects(){
  for(const id of ["league","historyLeague"]){
@@ -2241,29 +2235,6 @@ function liveModelComparison(m){
  const mode=state.activePredictionView||'both';
  return `<div class="fixture-comparison">${mode==='both'&&a?fpStatusTag({...b,originalPrediction:a}):''}<div class="model-grid ${mode==='both'?'':'single'}">${mode!=='updated'?cell(a,'League-adjusted · Poisson'):''}${mode!=='original'?cell(b,'Team-form · Goal difference'):''}</div></div>`;
 }
-async function auditCandidateLeagues(){
- const btn=$("auditCandidateLeagues"),root=$("candidateAuditResults");btn.disabled=true;root.textContent="Checking ESPN fixture and result coverage…";
- const ids=Object.keys(CANDIDATE_LEAGUES),now=new Date(),months=[];
- for(let offset=-24;offset<=1;offset++){const d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()+offset,1));months.push(`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}`)}
- const rows=[];
- try{
- for(const id of ids){
-  const results=[],errors=[];
-  // Use one month per quarter for an inexpensive initial audit, then current/next months.
-  const checks=months.filter((_,i)=>i%3===0||i>=24);
-  for(const mon of checks){try{results.push(...await fetchMonth(id,mon))}catch(e){errors.push(mon)}}
-  const unique=[...new Map(results.map(m=>[eventId(m),m])).values()];
-  const done=unique.filter(isFinished),scored=done.filter(m=>Number.isFinite(m.homeScore)&&Number.isFinite(m.awayScore));
-  const upcoming=unique.filter(m=>m.state==='pre'&&new Date(m.date)>now).length;
-  const pass=done.length>=60&&scored.length/done.length>=.98&&errors.length===0;
-  rows.push({id,name:CANDIDATE_LEAGUES[id],sample:unique.length,finished:done.length,scoreRate:done.length?Math.round(100*scored.length/done.length):0,upcoming,errors:errors.length,pass});
-  root.textContent=`Checked ${rows.length}/${ids.length} competitions…`;
- }
- const approved=new Set(approvedExtraLeagues());
- root.innerHTML=`<p class="muted smalltext">Sampled historical months (not every match). A pass indicates basic scoreboard viability only, not verified shot-statistic completeness or model accuracy.</p><table><thead><tr><th>League</th><th>Sampled fixtures</th><th>Final scores</th><th>Upcoming</th><th>Request failures</th><th>Assessment</th><th>Enable</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.sample} (${r.finished} finished)</td><td>${r.scoreRate}%</td><td>${r.upcoming}</td><td>${r.errors}</td><td>${r.pass?'Scoreboard sample passes':'Needs review'}</td><td><input type="checkbox" data-enable-league="${r.id}" ${approved.has(r.id)?'checked':''} ${r.pass?'':'disabled'} aria-label="Enable ${esc(r.name)}"></td></tr>`).join('')}</tbody></table><p class="muted smalltext">Enable only after reviewing coverage. Enabling a league adds it to the next fixture load and both models; reload the HTML to update all competition menus.</p><button class="btn secondary small" id="saveApprovedLeagues" type="button">Save approved leagues</button>`;
- $("saveApprovedLeagues").onclick=()=>{const selected=[...root.querySelectorAll('[data-enable-league]:checked')].map(e=>e.dataset.enableLeague);store(APPROVED_EXTRA_KEY,selected);root.insertAdjacentHTML('beforeend','<p class="muted smalltext">Saved. Reload this HTML to activate the approved leagues.</p>')};
- }finally{btn.disabled=false}
-}
 function renderLiveScheduleCategory(){
  const mode=state.liveScheduleFilter,now=new Date(),todayKey=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/London",year:"numeric",month:"2-digit",day:"2-digit"}).format(now);
  const dayKey=m=>new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/London",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(m.date));
@@ -2345,7 +2316,7 @@ function showTab(tab){
   fetchLive();fetchLiveSchedule();
  }
 }
-activateApprovedLeagues();
+
 initLeagueSelects();
 document.querySelectorAll("nav button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
 $("load").addEventListener("click",loadData);$("league").addEventListener("change",renderFixtures);$("days").addEventListener("change",renderFixtures);$("sort").addEventListener("change",renderFixtures);
@@ -2362,7 +2333,7 @@ for(let i=0;i<=30;i+=5)$("finishingChoice").add(new Option(`${i}%`,String(i)));
 historicalXgStatus();
 
 $("cancelTest").addEventListener("click",()=>{testCancelRequested=true;$("testStatus").textContent="Cancelling test after the current calculation…"});$("analysisRefresh").addEventListener("click",renderAnalysis);$("saveSettings").addEventListener("click",saveSettings);$("runTest").addEventListener("click",doTest);
-$("auditCandidateLeagues").addEventListener("click",auditCandidateLeagues);
+
 $("liveRefresh").addEventListener("click",()=>{fetchLive();fetchLiveSchedule()});
  $("live").addEventListener("click",event=>{const btn=event.target.closest("[data-live-toggle]");if(btn)toggleHideLiveGame(btn.dataset.liveToggle)});
  $("refreshWeekly").addEventListener("click",renderWeeklyTop6);
